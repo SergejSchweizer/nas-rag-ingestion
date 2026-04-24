@@ -9,7 +9,7 @@ llama-index-embeddings-huggingface==0.3.0
 sentence-transformers==3.0.0
 
 # Parsing and config
-pypdf==4.0.0
+docling==2.91.0
 PyYAML==6.0.0
 
 # Testing

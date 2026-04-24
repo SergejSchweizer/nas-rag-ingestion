@@ -50,5 +50,5 @@ def configure_weekly_logging(
     root_logger.addHandler(stream_handler)
 
     # Reduce noisy third-party warnings while preserving parser warnings/errors.
-    logging.getLogger("pypdf").setLevel(logging.ERROR)
+    logging.getLogger("docling").setLevel(logging.WARNING)
     return log_file_path

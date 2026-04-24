@@ -61,6 +61,7 @@ LlamaIndex-based RAG ingestion and retrieval pipeline using Qdrant as vector dat
 - LlamaIndex
 - Qdrant
 - OpenWebUI
+- Docling (document parsing backend)
 
 ## Repository Structure
 ```text
@@ -96,8 +97,8 @@ project documentation
 5. Install project in editable mode:
    - `pip install -e .`
 6. Run parsing step for your NAS corpus:
-   - Default (all runtime locations from config): `python3 <parse-script> --config <runtime-config-file>`
-   - Limited sample run: `python3 <parse-script> --config <runtime-config-file> --max-files 50`
+   - Default (all runtime locations from config): `python3 scripts/parse_corpus.py --config <runtime-config-file>`
+   - Limited sample run: `python3 scripts/parse_corpus.py --config <runtime-config-file> --max-files 50`
    - Override one output location temporarily with a CLI override flag if needed.
 7. Continue with indexing/retrieval services (next implementation steps).
 
@@ -124,12 +125,24 @@ Rule for this repository:
 Current parser implementation:
 - Parsing package with dedicated modules:
   - Parser orchestration
-  - Extractor strategies and factory
+  - Docling adapter/mapping layer
   - Parsed data model
   - Parsing defaults
 - CLI parser entrypoint script
 - Runtime config file
 - Supported file types: `.pdf`, `.md`, `.txt`
+- Parsing backend and scope:
+  - `Docling` is used as the primary document parsing engine.
+  - Directly parsed by Docling: `.pdf`, `.md`
+  - `.txt` files are passed to Docling via string conversion mode.
+  - Parsed semantic elements mapped into project schema:
+    - `title`
+    - `section_heading`
+    - `paragraph`
+    - `table`
+    - `figure_caption`
+    - `equation`
+    - `references`
 - Optional run limiter: `--max-files N` to ingest only first N discovered files per run
 - Idempotent ingestion state location is configured in `paths.state_file`
 - Unchanged files are skipped by default (disable with `--no-skip-unchanged`)
@@ -155,7 +168,7 @@ The parsing implementation is designed to:
 ### Scope
 Current implementation covers:
 1. file discovery and extension filtering,
-2. extractor-based content loading,
+2. Docling-based content parsing,
 3. semantic element extraction,
 4. section-aligned parent node construction,
 5. retrieval-granularity child node construction,
@@ -222,9 +235,9 @@ Supported `chunk_type` values:
 ### End-to-End Flow
 1. discover files.
 2. optionally skip unchanged files (state fingerprint match).
-3. extract raw text by file extension.
-4. split text into page units.
-5. classify line-level semantic elements.
+3. parse files with Docling.
+4. map Docling document items to semantic elements.
+5. apply lightweight fallback classification for plain-text edge cases.
 6. merge adjacent compatible elements.
 7. infer paper metadata (`paper_title`, `authors`, `year`).
 8. build parent nodes from section boundaries.
@@ -237,25 +250,19 @@ Supported `chunk_type` values:
 12. log run stats and unparsed-file details.
 
 ### Semantic Extraction Details
-Heading detection uses:
-1. markdown headings (`#`, `##`, ...),
-2. numbered headings (`1`, `1.2`, `2.3.4`),
-3. known keywords (`Abstract`, `Introduction`, `References`).
+Primary extraction uses Docling item labels and structure:
+1. `TitleItem` -> `title`
+2. `SectionHeaderItem` -> `section_heading`
+3. `FormulaItem` -> `equation`
+4. `TableItem` -> `table`
+5. `PictureItem` / captions -> `figure_caption`
+6. `TextItem` -> `paragraph` or `references` (based on section context)
 
-Figure detection:
-- lines starting with `Figure` or `Fig.` and a numeric marker.
-
-Table detection:
-- pipe-delimited rows,
-- tab-delimited rows,
-- multi-column spacing heuristics.
-
-Equation detection:
-- lines containing `=`,
-- plus math-like operators or symbols.
-
-References mode:
-- after references section begins, subsequent lines are tagged as `references`.
+Fallback classification for plain-text blocks is still applied when explicit Docling item typing is not available:
+- figure caption patterns (`Figure` / `Fig.`),
+- markdown-like table notation (`|`-separated rows),
+- equation-like blocks (`=` with math operators),
+- references mode after a references section heading.
 
 ### Parent Node Construction
 Parent nodes are structure-aligned, not fixed-token:
@@ -355,9 +362,9 @@ Parser runtime depends on:
 
 ### Current Heuristic Limits
 Known limitations:
-1. author extraction can over-capture noisy PDF lines.
+1. author extraction can over-capture noisy front-matter lines.
 2. year extraction is heuristic from early content.
-3. section detection may degrade on OCR-heavy documents.
+3. section mapping quality depends on source layout quality and OCR quality.
 4. table detection can over-classify multi-column plain text.
 
 ### Extension Points
@@ -407,14 +414,16 @@ Child node construction:
 
 ## Table And Figure Handling
 Table handling:
-1. Table-like lines are detected and parsed into row/column arrays.
-2. Table chunks are emitted separately with `chunk_type=table`.
-3. Table metadata preserves `table_rows`.
+1. Docling tables are converted to row/column arrays.
+2. Textual fallback parsing is applied for markdown-like table blocks when needed.
+3. Table chunks are emitted separately with `chunk_type=table`.
+4. Table metadata preserves `table_rows`.
 
 Figure handling:
-1. Figure captions are detected from `Figure`/`Fig.` patterns.
-2. Figure chunks are emitted separately with `chunk_type=figure`.
-3. Figure chunk text includes caption + nearby explanatory paragraph context when available.
+1. Docling figure/caption output is used as primary source.
+2. Caption-pattern fallback (`Figure` / `Fig.`) is used for plain-text markdown cases.
+3. Figure chunks are emitted separately with `chunk_type=figure`.
+4. Figure chunk text includes caption + nearby explanatory paragraph context when available.
 
 ## Metadata Contract
 Document-level metadata includes:
@@ -434,18 +443,14 @@ These fields are designed for:
 ## Design Patterns
 Patterns currently used in ingestion/parsing:
 
-1. Strategy Pattern
-- Where: `FileTextExtractor`, `TextFileExtractor`, `PdfFileExtractor` in the extractor module
-- Why: each file type has distinct parsing logic; Strategy keeps each parser isolated and replaceable.
+1. Adapter Pattern
+- Where: Docling item-to-schema mapping in `CorpusParser` (`_extract_semantic_elements`, `_extract_docling_item_text`)
+- Why: keeps external Docling models decoupled from internal `SemanticElement` / node schema.
 
-2. Factory Pattern
-- Where: `ExtractorFactory` in the extractor module
-- Why: centralizes extension-to-extractor mapping so new formats can be added without changing `CorpusParser`.
-
-3. Dependency Injection
-- Where: `CorpusParser(..., extractor_factory=...)` in the parser module
-- Why: allows swapping parser behavior in tests and production (for custom loaders) without editing parser internals.
-- Validation: parser DI test in the ingestion test suite
+2. Dependency Injection
+- Where: `CorpusParser(..., docling_converter=...)` in the parser module
+- Why: allows test doubles and controlled parser behavior without editing parser internals.
+- Validation: parser converter-failure test in the ingestion test suite
 
 ## Hierarchical Chunking Strategy
 Recommended for your corpus (papers + books + MScFE notes):
@@ -540,7 +545,7 @@ Common operations:
 - Empty retrieval results: verify ingestion ran and collection has points.
 - Embedding mismatch: verify model dimensions match collection vector size.
 - OpenWebUI integration issues: verify endpoint URL and request format.
-- Noisy PDF parse messages (for example `Object ... 0 ...`): parser now uses tolerant PDF mode and continues on broken pages/files; check `parse_errors` in run stats.
+- Parsing failures: check `parse_errors` and `UNPARSED_FILE` / `UNPARSED_FILE_SUMMARY` markers in logs for concrete file-level failure reasons.
 
 ## Security Notes
 - Never place tokens, API keys, or passwords in README, source code, or committed files.

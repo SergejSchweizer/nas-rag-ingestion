@@ -1,9 +1,9 @@
-"""Tests for parsing, idempotency, manifest export, and extractor behavior."""
+"""Tests for parsing, idempotency, manifest export, and Docling integration behavior."""
 
 from pathlib import Path
 import json
 
-from src.ingestion.parsing import CorpusParser, ExtractorFactory, FileTextExtractor
+from src.ingestion.parsing import CorpusParser
 
 
 def test_discover_files_filters_extensions_and_excluded_dirs(tmp_path: Path) -> None:
@@ -24,7 +24,7 @@ def test_discover_files_filters_extensions_and_excluded_dirs(tmp_path: Path) -> 
 
 
 def test_parse_extracts_markdown_title_and_topic(tmp_path: Path) -> None:
-    """Markdown heading should be used as title and folder should map to topic."""
+    """Docling-backed parsing should keep title/topic metadata and semantic hierarchy."""
     doc_dir = tmp_path / "crypto-papers"
     doc_dir.mkdir()
     file_path = doc_dir / "btc.md"
@@ -87,30 +87,6 @@ def test_to_llama_documents_requires_llama_index(tmp_path: Path) -> None:
         assert raised is True
 
 
-def test_parser_supports_custom_extractor_via_dependency_injection(tmp_path: Path) -> None:
-    """Custom extractor injected via factory should control parsing output."""
-
-    class UpperExtractor(FileTextExtractor):
-        """Test extractor that uppercases plain text."""
-
-        def extract_text(self, path: Path) -> str:
-            """Return uppercase text for the given input path."""
-            return path.read_text(encoding="utf-8").upper()
-
-    (tmp_path / "notes.txt").write_text("alpha beta gamma", encoding="utf-8")
-    factory = ExtractorFactory(extractors={".txt": UpperExtractor()})
-    parser = CorpusParser(
-        source_dir=tmp_path,
-        include_extensions=(".txt",),
-        min_characters=5,
-        extractor_factory=factory,
-    )
-    parsed = parser.parse()
-
-    assert len(parsed) == 1
-    assert parsed[0].text == "ALPHA BETA GAMMA"
-
-
 def test_export_tracking_manifest_has_readable_summary(tmp_path: Path) -> None:
     """Tracking manifest should include summary counters and per-document preview."""
     (tmp_path / "paper.md").write_text(
@@ -159,21 +135,25 @@ def test_parse_with_state_reingests_file_if_content_changes(tmp_path: Path) -> N
     assert len(run_two) == 1
 
 
-def test_parse_continues_when_extractor_raises(tmp_path: Path) -> None:
-    """Parser should keep running and count parse errors when extraction fails."""
+def test_parse_continues_when_docling_converter_raises(tmp_path: Path) -> None:
+    """Parser should keep running and count parse errors when converter raises."""
 
-    class BrokenExtractor(FileTextExtractor):
-        """Test extractor that always raises an exception."""
+    class BrokenConverter:
+        """Converter test double that always fails."""
 
-        def extract_text(self, path: Path) -> str:
-            """Raise error to simulate corrupted extractor behavior."""
+        def convert(self, source: object, raises_on_error: bool = True) -> object:
+            """Raise conversion error for path-based conversion."""
             raise ValueError("broken file payload")
 
-    (tmp_path / "bad.txt").write_text("ignored content", encoding="utf-8")
+        def convert_string(self, content: str, format: object, name: str | None = None) -> object:
+            """Raise conversion error for string-based conversion."""
+            raise ValueError("broken file payload")
+
+    (tmp_path / "bad.md").write_text("ignored content", encoding="utf-8")
     parser = CorpusParser(
         source_dir=tmp_path,
-        include_extensions=(".txt",),
-        extractor_factory=ExtractorFactory(extractors={".txt": BrokenExtractor()}),
+        include_extensions=(".md",),
+        docling_converter=BrokenConverter(),
     )
 
     parsed = parser.parse()
@@ -181,7 +161,7 @@ def test_parse_continues_when_extractor_raises(tmp_path: Path) -> None:
     assert parser.last_run_stats.parse_error_count == 1
     assert len(parser.last_run_stats.unparsed_files) == 1
     relative_path, reason = parser.last_run_stats.unparsed_files[0]
-    assert relative_path == "bad.txt"
+    assert relative_path == "bad.md"
     assert "broken file payload" in reason
 
 
