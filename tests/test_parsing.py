@@ -1,3 +1,5 @@
+"""Tests for parsing, idempotency, manifest export, and extractor behavior."""
+
 from pathlib import Path
 import json
 
@@ -5,6 +7,7 @@ from src.ingestion.parsing import CorpusParser, ExtractorFactory, FileTextExtrac
 
 
 def test_discover_files_filters_extensions_and_excluded_dirs(tmp_path: Path) -> None:
+    """Parser should include only supported extensions and skip excluded directories."""
     (tmp_path / "papers").mkdir()
     (tmp_path / ".git").mkdir()
 
@@ -21,6 +24,7 @@ def test_discover_files_filters_extensions_and_excluded_dirs(tmp_path: Path) -> 
 
 
 def test_parse_extracts_markdown_title_and_topic(tmp_path: Path) -> None:
+    """Markdown heading should be used as title and folder should map to topic."""
     doc_dir = tmp_path / "crypto-papers"
     doc_dir.mkdir()
     file_path = doc_dir / "btc.md"
@@ -35,9 +39,14 @@ def test_parse_extracts_markdown_title_and_topic(tmp_path: Path) -> None:
     assert doc.metadata["topic"] == "crypto-papers"
     assert doc.metadata["relative_path"] == "crypto-papers/btc.md"
     assert doc.metadata["char_count"] >= 20
+    assert doc.metadata["paper_title"] == "Bitcoin Whitepaper"
+    assert doc.elements
+    assert doc.parent_nodes
+    assert doc.child_nodes
 
 
 def test_parse_skips_short_documents(tmp_path: Path) -> None:
+    """Parser should drop documents below the configured minimum character threshold."""
     (tmp_path / "notes.txt").write_text("short", encoding="utf-8")
     parser = CorpusParser(source_dir=tmp_path, include_extensions=(".txt",), min_characters=10)
     parsed = parser.parse()
@@ -45,6 +54,7 @@ def test_parse_skips_short_documents(tmp_path: Path) -> None:
 
 
 def test_parse_respects_max_files_limit(tmp_path: Path) -> None:
+    """`max_files` should limit discovered files in deterministic order."""
     docs_dir = tmp_path / "notes"
     docs_dir.mkdir()
     (docs_dir / "a.txt").write_text("alpha content long enough", encoding="utf-8")
@@ -60,6 +70,7 @@ def test_parse_respects_max_files_limit(tmp_path: Path) -> None:
 
 
 def test_to_llama_documents_requires_llama_index(tmp_path: Path) -> None:
+    """Conversion to LlamaIndex documents should fail clearly when dependency is missing."""
     (tmp_path / "notes.txt").write_text("Enough characters for parsing.", encoding="utf-8")
     parser = CorpusParser(source_dir=tmp_path, include_extensions=(".txt",), min_characters=5)
     parsed = parser.parse()
@@ -77,8 +88,13 @@ def test_to_llama_documents_requires_llama_index(tmp_path: Path) -> None:
 
 
 def test_parser_supports_custom_extractor_via_dependency_injection(tmp_path: Path) -> None:
+    """Custom extractor injected via factory should control parsing output."""
+
     class UpperExtractor(FileTextExtractor):
+        """Test extractor that uppercases plain text."""
+
         def extract_text(self, path: Path) -> str:
+            """Return uppercase text for the given input path."""
             return path.read_text(encoding="utf-8").upper()
 
     (tmp_path / "notes.txt").write_text("alpha beta gamma", encoding="utf-8")
@@ -96,6 +112,7 @@ def test_parser_supports_custom_extractor_via_dependency_injection(tmp_path: Pat
 
 
 def test_export_tracking_manifest_has_readable_summary(tmp_path: Path) -> None:
+    """Tracking manifest should include summary counters and per-document preview."""
     (tmp_path / "paper.md").write_text(
         "# Paper Title\nThis is a long paragraph for preview generation.",
         encoding="utf-8",
@@ -114,6 +131,7 @@ def test_export_tracking_manifest_has_readable_summary(tmp_path: Path) -> None:
 
 
 def test_parse_with_state_skips_unchanged_files(tmp_path: Path) -> None:
+    """Second parse run should skip unchanged files when state tracking is enabled."""
     state_file = tmp_path / "state" / "ingestion_state.json"
     (tmp_path / "paper.txt").write_text("same content for idempotency", encoding="utf-8")
     parser = CorpusParser(source_dir=tmp_path, include_extensions=(".txt",), min_characters=5)
@@ -127,6 +145,7 @@ def test_parse_with_state_skips_unchanged_files(tmp_path: Path) -> None:
 
 
 def test_parse_with_state_reingests_file_if_content_changes(tmp_path: Path) -> None:
+    """File should be re-ingested when fingerprint changes between runs."""
     state_file = tmp_path / "state" / "ingestion_state.json"
     target_file = tmp_path / "paper.txt"
     target_file.write_text("v1 content for parser", encoding="utf-8")
@@ -141,8 +160,13 @@ def test_parse_with_state_reingests_file_if_content_changes(tmp_path: Path) -> N
 
 
 def test_parse_continues_when_extractor_raises(tmp_path: Path) -> None:
+    """Parser should keep running and count parse errors when extraction fails."""
+
     class BrokenExtractor(FileTextExtractor):
+        """Test extractor that always raises an exception."""
+
         def extract_text(self, path: Path) -> str:
+            """Raise error to simulate corrupted extractor behavior."""
             raise ValueError("broken file payload")
 
     (tmp_path / "bad.txt").write_text("ignored content", encoding="utf-8")
@@ -155,3 +179,59 @@ def test_parse_continues_when_extractor_raises(tmp_path: Path) -> None:
     parsed = parser.parse()
     assert parsed == []
     assert parser.last_run_stats.parse_error_count == 1
+    assert len(parser.last_run_stats.unparsed_files) == 1
+    relative_path, reason = parser.last_run_stats.unparsed_files[0]
+    assert relative_path == "bad.txt"
+    assert "broken file payload" in reason
+
+
+def test_parse_builds_semantic_elements_and_special_chunks(tmp_path: Path) -> None:
+    """Parser should build semantic elements, parent nodes, and special child chunks."""
+    (tmp_path / "paper.md").write_text(
+        "\n".join(
+            [
+                "# Crypto Market Dynamics",
+                "Sergej Schweizer",
+                "2024",
+                "## Introduction",
+                "This paragraph explains the market structure.",
+                "Figure 1: BTC volatility regime chart.",
+                "This paragraph explains the figure in detail.",
+                "## Results",
+                "A = B + C",
+                "col1 | col2 | col3",
+                "v1 | v2 | v3",
+                "## References",
+                "[1] Satoshi, 2008",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parser = CorpusParser(source_dir=tmp_path, include_extensions=(".md",), min_characters=5)
+    parsed = parser.parse()
+
+    assert len(parsed) == 1
+    doc = parsed[0]
+
+    element_types = {item.element_type for item in doc.elements}
+    assert "title" in element_types
+    assert "section_heading" in element_types
+    assert "paragraph" in element_types
+    assert "figure_caption" in element_types
+    assert "equation" in element_types
+    assert "table" in element_types
+    assert "references" in element_types
+
+    assert doc.parent_nodes
+    assert doc.child_nodes
+    chunk_types = {item.chunk_type for item in doc.child_nodes}
+    assert "text" in chunk_types
+    assert "table" in chunk_types
+    assert "figure" in chunk_types
+
+    first_parent = doc.parent_nodes[0]
+    assert first_parent.metadata["chunk_level"] == "parent"
+    first_child = doc.child_nodes[0]
+    assert first_child.metadata["chunk_level"] == "child"
+    assert first_child.metadata["doc_id"] == doc.doc_id

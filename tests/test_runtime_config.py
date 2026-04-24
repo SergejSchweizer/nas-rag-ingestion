@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+"""Tests for config loading and CLI override precedence resolution."""
+
 from src.ingestion.runtime_config import resolve_parse_runtime_config
 
 
 def test_resolve_parse_runtime_config_uses_config_paths() -> None:
+    """Resolver should map config values directly when no CLI overrides are provided."""
     cfg = {
         "paths": {
             "source_dir": "/volume1/RAG/crypto",
@@ -31,9 +34,12 @@ def test_resolve_parse_runtime_config_uses_config_paths() -> None:
     assert resolved.preview_characters == 300
     assert resolved.max_files == 25
     assert resolved.skip_unchanged is True
+    assert resolved.child_chunk_size == 800
+    assert resolved.child_chunk_overlap == 120
 
 
 def test_resolve_parse_runtime_config_cli_overrides_config() -> None:
+    """CLI override values should take precedence over file-based config values."""
     cfg = {
         "paths": {
             "source_dir": "/a",
@@ -75,4 +81,5 @@ def test_resolve_parse_runtime_config_cli_overrides_config() -> None:
     assert resolved.min_characters == 10
     assert resolved.max_files == 5
     assert resolved.skip_unchanged is False
-
+    assert resolved.child_chunk_size == 800
+    assert resolved.child_chunk_overlap == 120

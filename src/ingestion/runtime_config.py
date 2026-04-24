@@ -11,6 +11,8 @@ import yaml
 
 @dataclass(frozen=True)
 class ParseRuntimeConfig:
+    """Resolved runtime settings for the parsing CLI execution."""
+
     source_dir: str
     output_jsonl: str
     output_manifest: str
@@ -21,9 +23,12 @@ class ParseRuntimeConfig:
     min_characters: int
     max_files: int | None
     skip_unchanged: bool
+    child_chunk_size: int
+    child_chunk_overlap: int
 
 
 def load_yaml_config(path: str | Path) -> dict[str, Any]:
+    """Load YAML config file and validate top-level mapping shape."""
     config_path = Path(path)
     if not config_path.exists():
         raise FileNotFoundError(f"Config file not found: {config_path}")
@@ -48,12 +53,16 @@ def resolve_parse_runtime_config(
     max_files: int | None = None,
     no_skip_unchanged: bool = False,
 ) -> ParseRuntimeConfig:
+    """Resolve parse runtime configuration from file config and CLI overrides."""
     paths_cfg = config.get("paths", {})
     parsing_cfg = config.get("parsing", {})
+    chunking_cfg = config.get("chunking", {})
     if not isinstance(paths_cfg, dict):
         raise ValueError("`paths` must be a mapping in config.")
     if not isinstance(parsing_cfg, dict):
         raise ValueError("`parsing` must be a mapping in config.")
+    if not isinstance(chunking_cfg, dict):
+        raise ValueError("`chunking` must be a mapping in config.")
 
     resolved_source_dir = source_dir or _required_str(paths_cfg, "source_dir")
     resolved_output_jsonl = output_jsonl or _required_str(paths_cfg, "output_jsonl")
@@ -67,6 +76,8 @@ def resolve_parse_runtime_config(
     resolved_max_files = max_files if max_files is not None else _optional_int(parsing_cfg.get("max_files"))
     default_skip_unchanged = bool(parsing_cfg.get("skip_unchanged", True))
     resolved_skip_unchanged = False if no_skip_unchanged else default_skip_unchanged
+    resolved_child_chunk_size = int(chunking_cfg.get("chunk_size", 800))
+    resolved_child_chunk_overlap = int(chunking_cfg.get("chunk_overlap", 120))
 
     return ParseRuntimeConfig(
         source_dir=resolved_source_dir,
@@ -79,10 +90,13 @@ def resolve_parse_runtime_config(
         min_characters=resolved_min_characters,
         max_files=resolved_max_files,
         skip_unchanged=resolved_skip_unchanged,
+        child_chunk_size=resolved_child_chunk_size,
+        child_chunk_overlap=resolved_child_chunk_overlap,
     )
 
 
 def _required_str(mapping: dict[str, Any], key: str) -> str:
+    """Return required string value from mapping or raise configuration error."""
     value = mapping.get(key)
     if not value or not isinstance(value, str):
         raise ValueError(f"Missing required config key: paths.{key}")
@@ -90,7 +104,7 @@ def _required_str(mapping: dict[str, Any], key: str) -> str:
 
 
 def _optional_int(value: Any) -> int | None:
+    """Return integer representation or `None` when value is not provided."""
     if value is None:
         return None
     return int(value)
-

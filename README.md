@@ -16,6 +16,11 @@ LlamaIndex-based RAG ingestion and retrieval pipeline using Qdrant as vector dat
   - [Configuration](#configuration)
 - [Ingestion Design](#ingestion-design)
   - [Step 1: Parsing](#step-1-parsing)
+  - [Implementation Guide](#implementation-guide)
+  - [Semantic Schema](#semantic-schema)
+  - [Hierarchy Build](#hierarchy-build)
+  - [Table And Figure Handling](#table-and-figure-handling)
+  - [Metadata Contract](#metadata-contract)
   - [Design Patterns](#design-patterns)
   - [Hierarchical Chunking Strategy](#hierarchical-chunking-strategy)
   - [Pipeline Flow](#pipeline-flow)
@@ -110,7 +115,7 @@ Rule for this repository:
 - Target is GPU-free hardware only; keep dependencies and defaults CPU-compatible.
 - Every new/changed functionality must update dependency files if package needs changed.
 - Every new/changed functionality must also update tests.
-- Every new/changed functionality must update code docstrings and README sections impacted by the change.
+- Every class and function must have a docstring; keep docstrings and README sections updated with each change.
 - Runtime locations are configured under `paths` in local config; avoid hardcoding them in code.
 
 ## Ingestion Design
@@ -133,14 +138,298 @@ Output:
 - JSONL output (one parsed document per line)
 - Human-readable tracking manifest output
 - Ingestion state output (fingerprints to avoid re-ingesting unchanged files)
-- Metadata suitable for hierarchical chunking, including:
-  - `doc_id`
-  - `source_path`
-  - `relative_path`
-  - `topic`
-  - `title`
-  - `char_count`
-  - `text_preview` (manifest only, for easy inspection)
+- Structured semantic elements
+- Parent retrieval nodes aligned to section boundaries
+- Child retrieval nodes for fine-grained retrieval
+
+## Implementation Guide
+This section is the complete implementation guide for parsing.
+
+### Purpose
+The parsing implementation is designed to:
+1. transform raw files into semantic elements,
+2. build hierarchy-aware parent and child retrieval nodes,
+3. attach rich metadata for filtering and reranking,
+4. serialize outputs for downstream indexing and audit.
+
+### Scope
+Current implementation covers:
+1. file discovery and extension filtering,
+2. extractor-based content loading,
+3. semantic element extraction,
+4. section-aligned parent node construction,
+5. retrieval-granularity child node construction,
+6. table and figure specialized chunk handling,
+7. metadata enrichment,
+8. idempotent state tracking,
+9. failure-aware logging.
+
+### Core Data Model
+`ParsedDocument` includes:
+1. legacy compatibility fields:
+   - `doc_id`
+   - `text`
+   - `metadata`
+2. structured fields:
+   - `elements` (`SemanticElement[]`)
+   - `parent_nodes` (`ParentNode[]`)
+   - `child_nodes` (`ChildNode[]`)
+
+`SemanticElement` fields:
+- `element_id`
+- `element_type`
+- `text`
+- `page`
+- `order`
+- `section_path`
+- `metadata`
+
+Supported `element_type` values:
+- `title`
+- `section_heading`
+- `paragraph`
+- `table`
+- `figure_caption`
+- `equation`
+- `references`
+
+`ParentNode` fields:
+- `parent_id`
+- `doc_id`
+- `section_path`
+- `page_start`
+- `page_end`
+- `text`
+- `metadata`
+
+`ChildNode` fields:
+- `child_id`
+- `parent_id`
+- `doc_id`
+- `chunk_level`
+- `chunk_type`
+- `section_path`
+- `page_start`
+- `page_end`
+- `text`
+- `metadata`
+
+Supported `chunk_type` values:
+- `text`
+- `table`
+- `figure`
+
+### End-to-End Flow
+1. discover files.
+2. optionally skip unchanged files (state fingerprint match).
+3. extract raw text by file extension.
+4. split text into page units.
+5. classify line-level semantic elements.
+6. merge adjacent compatible elements.
+7. infer paper metadata (`paper_title`, `authors`, `year`).
+8. build parent nodes from section boundaries.
+9. build child nodes:
+   - text windows from parent text,
+   - dedicated table chunks,
+   - dedicated figure chunks with nearby context.
+10. serialize outputs to JSONL and manifest.
+11. update state.
+12. log run stats and unparsed-file details.
+
+### Semantic Extraction Details
+Heading detection uses:
+1. markdown headings (`#`, `##`, ...),
+2. numbered headings (`1`, `1.2`, `2.3.4`),
+3. known keywords (`Abstract`, `Introduction`, `References`).
+
+Figure detection:
+- lines starting with `Figure` or `Fig.` and a numeric marker.
+
+Table detection:
+- pipe-delimited rows,
+- tab-delimited rows,
+- multi-column spacing heuristics.
+
+Equation detection:
+- lines containing `=`,
+- plus math-like operators or symbols.
+
+References mode:
+- after references section begins, subsequent lines are tagged as `references`.
+
+### Parent Node Construction
+Parent nodes are structure-aligned, not fixed-token:
+1. accumulate elements until a new `section_heading` appears,
+2. flush current parent on heading transition,
+3. start a new parent for the new section path.
+
+This preserves semantic boundaries and improves section-grounded retrieval.
+
+### Child Node Construction
+Text child nodes:
+1. generated from parent text via token windows,
+2. chunk size from `chunking.chunk_size`,
+3. overlap from `chunking.chunk_overlap`.
+
+Table child nodes:
+1. emitted separately from text chunks,
+2. preserve row/column arrays in metadata (`table_rows`).
+
+Figure child nodes:
+1. emitted separately from text chunks,
+2. include figure caption plus nearby explanatory paragraph context.
+
+### Metadata Contract
+Document-level metadata:
+- `doc_id`
+- `paper_title`
+- `authors`
+- `year`
+- `source_path`
+- `relative_path`
+- `topic`
+- `char_count`
+- `page_start`
+- `page_end`
+- `elements_count`
+- `parent_nodes_count`
+- `child_nodes_count`
+
+Parent metadata includes:
+- `chunk_level = "parent"`
+- section and page context
+- paper-level metadata
+
+Child metadata includes:
+- `chunk_level = "child"`
+- `chunk_type` in `{text, table, figure}`
+- `parent_id`, `child_id`
+- section and page context
+- paper-level metadata
+- specialized fields (`table_rows`, `figure_context`) when available
+
+### Serialization Format
+JSONL row includes:
+1. legacy fields (`doc_id`, `text`, `metadata`)
+2. `elements`
+3. `parent_nodes`
+4. `child_nodes`
+
+Manifest includes:
+1. document-level summary stats,
+2. semantic and hierarchy counts,
+3. element type distribution,
+4. preview text.
+
+### Idempotent State Tracking
+With state enabled:
+1. fingerprint each source file,
+2. skip unchanged files,
+3. reprocess changed files,
+4. remove missing files on full runs.
+
+State entries store:
+- fingerprint
+- doc_id
+- char_count
+- last ingestion timestamp
+
+### Logging And Parse Failures
+Failure markers:
+- `UNPARSED_FILE` for per-file parse failures,
+- `UNPARSED_FILE_SUMMARY` for end-of-run recap.
+
+Run stats track:
+- discovered count
+- parsed count
+- skipped unchanged count
+- removed missing count
+- parse error count
+- unparsed file details
+
+### Configuration Inputs
+Parser runtime depends on:
+1. `paths` (source, outputs, state, logs),
+2. `parsing` (minimum size, preview, skip policy, logging),
+3. `chunking` (child chunk size, overlap).
+
+### Current Heuristic Limits
+Known limitations:
+1. author extraction can over-capture noisy PDF lines.
+2. year extraction is heuristic from early content.
+3. section detection may degrade on OCR-heavy documents.
+4. table detection can over-classify multi-column plain text.
+
+### Extension Points
+Recommended next upgrades:
+1. dedicated author/year metadata extraction,
+2. stronger PDF layout-aware backend,
+3. explicit section graph and citation parsing,
+4. learned table/figure detectors,
+5. chunk quality evaluator with retrieval benchmark loop.
+
+### Developer Checklist
+When changing parsing logic:
+1. update model and function docstrings,
+2. update this README implementation section,
+3. add or adjust tests,
+4. validate JSONL and manifest outputs,
+5. run parser smoke test on representative files.
+
+## Semantic Schema
+Each parsed document now includes:
+1. `elements`: ordered semantic units with:
+   - `element_type` in `{title, section_heading, paragraph, table, figure_caption, equation, references}`
+   - `page`
+   - `order`
+   - `section_path`
+   - `source_doc_id` linkage through document context
+2. `parent_nodes`: section/subsection aligned nodes.
+3. `child_nodes`: retrieval-granularity nodes linked to parent nodes.
+
+This allows downstream retrieval to preserve structure while still supporting granular search.
+
+## Hierarchy Build
+Parent node construction:
+1. Section headings define boundaries.
+2. Parent nodes are built from section/subsection blocks.
+3. Boundaries are aligned with heading transitions, not fixed token length.
+
+Child node construction:
+1. Text child chunks are generated from parent node text using overlapping token windows.
+2. Chunk size and overlap use `chunking.chunk_size` and `chunking.chunk_overlap`.
+3. Each child stores:
+   - `parent_id`
+   - `child_id`
+   - `section_path`
+   - `page_start` / `page_end`
+   - `chunk_level=child`
+
+## Table And Figure Handling
+Table handling:
+1. Table-like lines are detected and parsed into row/column arrays.
+2. Table chunks are emitted separately with `chunk_type=table`.
+3. Table metadata preserves `table_rows`.
+
+Figure handling:
+1. Figure captions are detected from `Figure`/`Fig.` patterns.
+2. Figure chunks are emitted separately with `chunk_type=figure`.
+3. Figure chunk text includes caption + nearby explanatory paragraph context when available.
+
+## Metadata Contract
+Document-level metadata includes:
+- `doc_id`
+- `paper_title`
+- `authors` (heuristic extraction when available)
+- `year` (heuristic extraction when available)
+- `section` context via nodes
+- `page_start` / `page_end`
+- `chunk_level` at parent and child levels
+
+These fields are designed for:
+1. strict metadata filtering,
+2. reranking with section/page awareness,
+3. citation-ready answer generation.
 
 ## Design Patterns
 Patterns currently used in ingestion/parsing:
@@ -234,6 +523,9 @@ Common operations:
 - Logs are written to the directory configured in `paths.log_dir`.
 - Weekly rotation is enabled (new file each week).
 - Historical logs are preserved (no deletion policy in app).
+- Unparsed files are logged with dedicated markers:
+  - `UNPARSED_FILE` for per-file failures during parsing
+  - `UNPARSED_FILE_SUMMARY` for end-of-run failed file recap
 - CLI options:
   - `--log-dir` to change log directory
   - `--log-level` to set verbosity

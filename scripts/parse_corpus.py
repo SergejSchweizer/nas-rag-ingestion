@@ -102,7 +102,12 @@ def main() -> None:
     logger.info("Starting corpus parsing. source_dir=%s max_files=%s", runtime.source_dir, runtime.max_files)
     logger.info("Logging to %s (weekly rotation enabled)", log_file_path)
 
-    parser = CorpusParser(source_dir=runtime.source_dir, min_characters=runtime.min_characters)
+    parser = CorpusParser(
+        source_dir=runtime.source_dir,
+        min_characters=runtime.min_characters,
+        child_chunk_size=runtime.child_chunk_size,
+        child_chunk_overlap=runtime.child_chunk_overlap,
+    )
     parsed_docs = parser.parse(
         max_files=runtime.max_files,
         state_file=runtime.state_file,
@@ -134,6 +139,10 @@ def main() -> None:
         parser.last_run_stats.removed_missing_count,
         parser.last_run_stats.parse_error_count,
     )
+    if parser.last_run_stats.unparsed_files:
+        logger.info("Unparsed file summary: total=%s", len(parser.last_run_stats.unparsed_files))
+        for relative_path, reason in parser.last_run_stats.unparsed_files:
+            logger.info("UNPARSED_FILE_SUMMARY relative_path=%s reason=%s", relative_path, reason)
 
 
 if __name__ == "__main__":

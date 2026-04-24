@@ -15,6 +15,7 @@ class FileTextExtractor(ABC):
 
     @abstractmethod
     def extract_text(self, path: Path) -> str:
+        """Extract plain text from the provided file path."""
         raise NotImplementedError
 
 
@@ -22,6 +23,7 @@ class TextFileExtractor(FileTextExtractor):
     """Concrete Strategy for `.txt` and `.md` files."""
 
     def extract_text(self, path: Path) -> str:
+        """Read text content using fallback encodings for robustness."""
         for encoding in ("utf-8", "latin-1"):
             try:
                 return path.read_text(encoding=encoding)
@@ -34,6 +36,7 @@ class PdfFileExtractor(FileTextExtractor):
     """Concrete Strategy for `.pdf` files."""
 
     def extract_text(self, path: Path) -> str:
+        """Extract text from PDF pages, tolerating malformed page objects."""
         try:
             from pypdf import PdfReader
         except ImportError as exc:
@@ -61,6 +64,7 @@ class ExtractorFactory:
     """Factory that resolves extractors by file extension."""
 
     def __init__(self, extractors: dict[str, FileTextExtractor] | None = None) -> None:
+        """Create extension-to-extractor mapping with sane defaults."""
         self.extractors = extractors or {
             ".txt": TextFileExtractor(),
             ".md": TextFileExtractor(),

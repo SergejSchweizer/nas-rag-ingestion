@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+"""Tests for logging utility configuration and weekly rotation settings."""
+
 import logging
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
@@ -8,6 +10,7 @@ from src.logging_utils import configure_weekly_logging
 
 
 def test_configure_weekly_logging_creates_weekly_rotating_handler(tmp_path: Path) -> None:
+    """Logging setup should create weekly rotating handler and preserve backups."""
     log_file = configure_weekly_logging(log_dir=tmp_path, level="INFO")
 
     assert log_file == tmp_path / "nas-rag-ingestion.log"
@@ -19,4 +22,3 @@ def test_configure_weekly_logging_creates_weekly_rotating_handler(tmp_path: Path
     assert handler.backupCount == 0
     assert handler.when == "W0"
     assert Path(handler.baseFilename) == log_file
-
