@@ -9,6 +9,7 @@ desktop.ini
 *.swp
 *.swo
 *~
+.github/
 
 # Logs
 *.log
@@ -43,11 +44,13 @@ build/
 dist/
 out/
 coverage/
+*.egg-info/
 
 # Temp files
 tmp/
 temp/
 .cache/
+data/
 
 # Archives
 *.zip

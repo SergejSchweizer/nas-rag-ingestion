@@ -11,6 +11,7 @@ LlamaIndex-based RAG ingestion and retrieval pipeline using Qdrant as vector dat
 - [Setup](#setup)
   - [Prerequisites](#prerequisites)
   - [Quick Start](#quick-start)
+  - [Editable Install](#editable-install)
   - [Dependency Management](#dependency-management)
   - [Configuration](#configuration)
 - [Ingestion Design](#ingestion-design)
@@ -23,18 +24,20 @@ LlamaIndex-based RAG ingestion and retrieval pipeline using Qdrant as vector dat
   - [Qdrant Collection Design](#qdrant-collection-design)
 - [Operations](#operations)
   - [Runbook](#runbook)
+  - [Logging](#logging)
   - [Testing](#testing)
   - [Troubleshooting](#troubleshooting)
   - [Security Notes](#security-notes)
 - [Project Governance](#project-governance)
   - [Roadmap](#roadmap)
   - [Contributing](#contributing)
+  - [Author](#author)
   - [License](#license)
 
 ## Overview
 
 ## Architecture
-- Data ingestion: local/NAS documents and other configured sources
+- Data ingestion: local NAS documents and other configured sources
 - Processing: parse, normalize, chunk documents
 - Embeddings: generate vectors using configured embedding model
 - Storage: upsert vectors + metadata into Qdrant
@@ -56,15 +59,15 @@ LlamaIndex-based RAG ingestion and retrieval pipeline using Qdrant as vector dat
 
 ## Repository Structure
 ```text
-.github/workflows/      CI workflows
-config/                 Local and example configuration
-data/                   Optional local data mounts
-docs/                   Extra design and operational docs
-requirements/           Dependency definitions (base/dev)
-scripts/                Helper scripts for ingestion/index ops
-src/                    Pipeline source code
-tests/                  Test suite
-README.md               Project documentation
+CI workflows
+configuration
+local data mounts
+documentation
+dependency definitions
+helper scripts
+pipeline source code
+tests
+project documentation
 ```
 
 ## Setup
@@ -79,39 +82,57 @@ README.md               Project documentation
 
 ## Quick Start
 1. Create local config from template:
-   - `cp config/config.example.yaml config/config.yaml`
-2. Fill secrets and endpoints in `config/config.yaml`.
-3. Create and activate virtual environment:
-   - `python3 -m venv .venv && source .venv/bin/activate`
+   - Copy the example config to your local runtime config file.
+2. Fill secrets and endpoints in your local runtime config file.
+3. Create and activate virtual environment.
 4. Install dependencies:
-   - Runtime: `pip install -r requirements.txt`
-   - Dev/test: `pip install -r requirements/dev.txt`
-5. Run parsing step for your NAS corpus:
-   - `python3 scripts/parse_corpus.py --source-dir /volume1/RAG/crypto`
-6. Continue with indexing/retrieval services (next implementation steps).
+   - Runtime dependencies install command from your dependency files.
+   - Dev/test dependencies install command from your dependency files.
+5. Install project in editable mode:
+   - `pip install -e .`
+6. Run parsing step for your NAS corpus:
+   - Default (all runtime locations from config): `python3 <parse-script> --config <runtime-config-file>`
+   - Limited sample run: `python3 <parse-script> --config <runtime-config-file> --max-files 50`
+   - Override one output location temporarily with a CLI override flag if needed.
+7. Continue with indexing/retrieval services (next implementation steps).
+
+## Editable Install
+- Project now includes `pyproject.toml`, so `pip install -e .` works.
+- Use editable mode during development so imports stay stable while code changes.
 
 ## Dependency Management
-- `requirements/base.txt`: runtime dependencies
-- `requirements/dev.txt`: runtime + test/lint tooling
-- `requirements.txt`: convenience entrypoint to runtime dependencies
+- Base dependency file: runtime dependencies
+- Dev dependency file with test and lint tooling
+- Root dependency entrypoint file
 - Dependencies are pinned with exact versions (`==`) for reproducibility.
 
 Rule for this repository:
 - Target is GPU-free hardware only; keep dependencies and defaults CPU-compatible.
 - Every new/changed functionality must update dependency files if package needs changed.
 - Every new/changed functionality must also update tests.
+- Every new/changed functionality must update code docstrings and README sections impacted by the change.
+- Runtime locations are configured under `paths` in local config; avoid hardcoding them in code.
 
 ## Ingestion Design
 
 ## Step 1: Parsing
 Current parser implementation:
-- Module: `src/ingestion/parsing.py`
-- CLI: `scripts/parse_corpus.py`
-- Default source: `/volume1/RAG/crypto`
+- Parsing package with dedicated modules:
+  - Parser orchestration
+  - Extractor strategies and factory
+  - Parsed data model
+  - Parsing defaults
+- CLI parser entrypoint script
+- Runtime config file
 - Supported file types: `.pdf`, `.md`, `.txt`
+- Optional run limiter: `--max-files N` to ingest only first N discovered files per run
+- Idempotent ingestion state location is configured in `paths.state_file`
+- Unchanged files are skipped by default (disable with `--no-skip-unchanged`)
 
 Output:
-- JSONL file at `data/parsed/parsed_documents.jsonl` (one parsed document per line)
+- JSONL output (one parsed document per line)
+- Human-readable tracking manifest output
+- Ingestion state output (fingerprints to avoid re-ingesting unchanged files)
 - Metadata suitable for hierarchical chunking, including:
   - `doc_id`
   - `source_path`
@@ -119,22 +140,23 @@ Output:
   - `topic`
   - `title`
   - `char_count`
+  - `text_preview` (manifest only, for easy inspection)
 
 ## Design Patterns
 Patterns currently used in ingestion/parsing:
 
 1. Strategy Pattern
-- Where: `FileTextExtractor`, `TextFileExtractor`, `PdfFileExtractor` in `src/ingestion/parsing.py`
+- Where: `FileTextExtractor`, `TextFileExtractor`, `PdfFileExtractor` in the extractor module
 - Why: each file type has distinct parsing logic; Strategy keeps each parser isolated and replaceable.
 
 2. Factory Pattern
-- Where: `ExtractorFactory` in `src/ingestion/parsing.py`
+- Where: `ExtractorFactory` in the extractor module
 - Why: centralizes extension-to-extractor mapping so new formats can be added without changing `CorpusParser`.
 
 3. Dependency Injection
-- Where: `CorpusParser(..., extractor_factory=...)` in `src/ingestion/parsing.py`
+- Where: `CorpusParser(..., extractor_factory=...)` in the parser module
 - Why: allows swapping parser behavior in tests and production (for custom loaders) without editing parser internals.
-- Validation: `test_parser_supports_custom_extractor_via_dependency_injection` in `tests/test_parsing.py`
+- Validation: parser DI test in the ingestion test suite
 
 ## Hierarchical Chunking Strategy
 Recommended for your corpus (papers + books + MScFE notes):
@@ -153,12 +175,14 @@ Model suggestions for local-first setup:
 
 ## Configuration
 All sensitive values must be stored only in:
-- `config/config.yaml` (local, ignored by Git)
+- local runtime config file (ignored by Git)
 
 Tracked, non-sensitive template:
-- `config/config.example.yaml`
+- configuration example template
 
 Suggested config sections:
+- `paths`
+- `parsing`
 - `qdrant`
 - `llm`
 - `embeddings`
@@ -181,7 +205,7 @@ Suggested config sections:
 
 ## OpenWebUI Integration
 - Configure OpenWebUI to call your backend endpoint.
-- Ensure the backend uses `config/config.yaml` for model and Qdrant settings.
+- Ensure the backend uses runtime config for model and Qdrant settings.
 - Validate with a smoke-test prompt and inspect retrieved sources.
 
 ## Qdrant Collection Design
@@ -206,6 +230,14 @@ Common operations:
 - Collection health check
 - Query smoke test
 
+## Logging
+- Logs are written to the directory configured in `paths.log_dir`.
+- Weekly rotation is enabled (new file each week).
+- Historical logs are preserved (no deletion policy in app).
+- CLI options:
+  - `--log-dir` to change log directory
+  - `--log-level` to set verbosity
+
 ## Testing
 - Unit tests for parsing/chunking/retrieval logic
 - Integration test against a local Qdrant instance
@@ -216,10 +248,11 @@ Common operations:
 - Empty retrieval results: verify ingestion ran and collection has points.
 - Embedding mismatch: verify model dimensions match collection vector size.
 - OpenWebUI integration issues: verify endpoint URL and request format.
+- Noisy PDF parse messages (for example `Object ... 0 ...`): parser now uses tolerant PDF mode and continues on broken pages/files; check `parse_errors` in run stats.
 
 ## Security Notes
 - Never place tokens, API keys, or passwords in README, source code, or committed files.
-- Keep secrets only in `config/config.yaml`.
+- Keep secrets only in your local runtime config file.
 - Rotate credentials if they were ever committed by mistake.
 
 ## Project Governance
@@ -235,6 +268,9 @@ Common operations:
 2. Add/adjust tests.
 3. Run checks locally.
 4. Open a pull request.
+
+## Author
+Sergej Schweizer
 
 ## License
 Add your chosen license (for example, MIT).

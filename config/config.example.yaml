@@ -1,3 +1,17 @@
+paths:
+  source_dir: "/volume1/RAG/crypto"
+  output_jsonl: "data/parsed/parsed_documents.jsonl"
+  output_manifest: "data/parsed/parsed_documents_manifest.json"
+  state_file: "data/state/ingestion_state.json"
+  log_dir: "/volume1/Temp/logs"
+
+parsing:
+  min_characters: 40
+  preview_characters: 240
+  max_files: null
+  skip_unchanged: true
+  log_level: "INFO"
+
 qdrant:
   url: "http://localhost:6333"
   api_key: "<set-in-local-config>"
