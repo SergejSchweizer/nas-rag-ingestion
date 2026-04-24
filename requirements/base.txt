@@ -10,7 +10,7 @@ sentence-transformers==3.0.0
 
 # Parsing and config
 docling==2.91.0
-PyYAML==6.0.0
+PyYAML==6.0.1
 
 # Testing
 pytest==8.0.0
