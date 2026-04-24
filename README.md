@@ -3,26 +3,35 @@
 LlamaIndex-based RAG ingestion and retrieval pipeline using Qdrant as vector database and OpenWebUI as chat interface.
 
 ## Table of Contents
-- [Architecture](#architecture)
-- [Features](#features)
-- [Tech Stack](#tech-stack)
-- [Repository Structure](#repository-structure)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Dependency Management](#dependency-management)
-- [Step 1: Parsing](#step-1-parsing)
-- [Hierarchical Chunking Strategy](#hierarchical-chunking-strategy)
-- [Configuration](#configuration)
-- [Pipeline Flow](#pipeline-flow)
-- [OpenWebUI Integration](#openwebui-integration)
-- [Qdrant Collection Design](#qdrant-collection-design)
-- [Runbook](#runbook)
-- [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
-- [Security Notes](#security-notes)
-- [Roadmap](#roadmap)
-- [Contributing](#contributing)
-- [License](#license)
+- [Overview](#overview)
+  - [Architecture](#architecture)
+  - [Features](#features)
+  - [Tech Stack](#tech-stack)
+  - [Repository Structure](#repository-structure)
+- [Setup](#setup)
+  - [Prerequisites](#prerequisites)
+  - [Quick Start](#quick-start)
+  - [Dependency Management](#dependency-management)
+  - [Configuration](#configuration)
+- [Ingestion Design](#ingestion-design)
+  - [Step 1: Parsing](#step-1-parsing)
+  - [Design Patterns](#design-patterns)
+  - [Hierarchical Chunking Strategy](#hierarchical-chunking-strategy)
+  - [Pipeline Flow](#pipeline-flow)
+- [Integration](#integration)
+  - [OpenWebUI Integration](#openwebui-integration)
+  - [Qdrant Collection Design](#qdrant-collection-design)
+- [Operations](#operations)
+  - [Runbook](#runbook)
+  - [Testing](#testing)
+  - [Troubleshooting](#troubleshooting)
+  - [Security Notes](#security-notes)
+- [Project Governance](#project-governance)
+  - [Roadmap](#roadmap)
+  - [Contributing](#contributing)
+  - [License](#license)
+
+## Overview
 
 ## Architecture
 - Data ingestion: local/NAS documents and other configured sources
@@ -58,6 +67,8 @@ tests/                  Test suite
 README.md               Project documentation
 ```
 
+## Setup
+
 ## Prerequisites
 - Docker and Docker Compose
 - Python 3.11+
@@ -83,11 +94,14 @@ README.md               Project documentation
 - `requirements/base.txt`: runtime dependencies
 - `requirements/dev.txt`: runtime + test/lint tooling
 - `requirements.txt`: convenience entrypoint to runtime dependencies
+- Dependencies are pinned with exact versions (`==`) for reproducibility.
 
 Rule for this repository:
 - Target is GPU-free hardware only; keep dependencies and defaults CPU-compatible.
 - Every new/changed functionality must update dependency files if package needs changed.
 - Every new/changed functionality must also update tests.
+
+## Ingestion Design
 
 ## Step 1: Parsing
 Current parser implementation:
@@ -105,6 +119,22 @@ Output:
   - `topic`
   - `title`
   - `char_count`
+
+## Design Patterns
+Patterns currently used in ingestion/parsing:
+
+1. Strategy Pattern
+- Where: `FileTextExtractor`, `TextFileExtractor`, `PdfFileExtractor` in `src/ingestion/parsing.py`
+- Why: each file type has distinct parsing logic; Strategy keeps each parser isolated and replaceable.
+
+2. Factory Pattern
+- Where: `ExtractorFactory` in `src/ingestion/parsing.py`
+- Why: centralizes extension-to-extractor mapping so new formats can be added without changing `CorpusParser`.
+
+3. Dependency Injection
+- Where: `CorpusParser(..., extractor_factory=...)` in `src/ingestion/parsing.py`
+- Why: allows swapping parser behavior in tests and production (for custom loaders) without editing parser internals.
+- Validation: `test_parser_supports_custom_extractor_via_dependency_injection` in `tests/test_parsing.py`
 
 ## Hierarchical Chunking Strategy
 Recommended for your corpus (papers + books + MScFE notes):
@@ -147,6 +177,8 @@ Suggested config sections:
 6. Retrieve top-k relevant chunks for each query.
 7. Synthesize final answer with LLM.
 
+## Integration
+
 ## OpenWebUI Integration
 - Configure OpenWebUI to call your backend endpoint.
 - Ensure the backend uses `config/config.yaml` for model and Qdrant settings.
@@ -163,6 +195,8 @@ Recommended payload fields:
 - `updated_at`
 
 Vector settings should match your embedding model dimensions and distance metric.
+
+## Operations
 
 ## Runbook
 Common operations:
@@ -187,6 +221,8 @@ Common operations:
 - Never place tokens, API keys, or passwords in README, source code, or committed files.
 - Keep secrets only in `config/config.yaml`.
 - Rotate credentials if they were ever committed by mistake.
+
+## Project Governance
 
 ## Roadmap
 - Hybrid retrieval (sparse + dense)

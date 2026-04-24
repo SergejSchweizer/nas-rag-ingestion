@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 import hashlib
 import json
 from dataclasses import dataclass
@@ -18,8 +19,71 @@ class ParsedDocument:
     metadata: dict
 
 
+class FileTextExtractor(ABC):
+    """
+    Strategy pattern interface.
+
+    Each concrete extractor handles one file type and can be swapped independently.
+    """
+
+    @abstractmethod
+    def extract_text(self, path: Path) -> str:
+        raise NotImplementedError
+
+
+class TextFileExtractor(FileTextExtractor):
+    """Concrete Strategy for `.txt` and `.md` files."""
+
+    def extract_text(self, path: Path) -> str:
+        for encoding in ("utf-8", "latin-1"):
+            try:
+                return path.read_text(encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+        return ""
+
+
+class PdfFileExtractor(FileTextExtractor):
+    """Concrete Strategy for `.pdf` files."""
+
+    def extract_text(self, path: Path) -> str:
+        try:
+            from pypdf import PdfReader
+        except ImportError as exc:
+            raise ImportError(
+                "Parsing PDF files requires `pypdf`. Install it to parse PDF content."
+            ) from exc
+
+        reader = PdfReader(str(path))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        return "\n".join(pages)
+
+
+class ExtractorFactory:
+    """
+    Factory pattern to resolve extractors by extension.
+
+    Keeps extension-to-extractor wiring in one place.
+    """
+
+    def __init__(self, extractors: dict[str, FileTextExtractor] | None = None) -> None:
+        self.extractors = extractors or {
+            ".txt": TextFileExtractor(),
+            ".md": TextFileExtractor(),
+            ".pdf": PdfFileExtractor(),
+        }
+
+    def for_path(self, path: Path) -> FileTextExtractor | None:
+        return self.extractors.get(path.suffix.lower())
+
+
 class CorpusParser:
-    """Parse a local corpus into normalized records for LlamaIndex."""
+    """
+    Parse a local corpus into normalized records for LlamaIndex.
+
+    Uses dependency injection for `ExtractorFactory` so parser behavior stays testable
+    and easy to extend with new file formats later.
+    """
 
     def __init__(
         self,
@@ -27,11 +91,13 @@ class CorpusParser:
         include_extensions: Iterable[str] = DEFAULT_EXTENSIONS,
         exclude_dirs: Iterable[str] = DEFAULT_EXCLUDE_DIRS,
         min_characters: int = 40,
+        extractor_factory: ExtractorFactory | None = None,
     ) -> None:
         self.source_dir = Path(source_dir).expanduser().resolve()
         self.include_extensions = tuple(ext.lower() for ext in include_extensions)
         self.exclude_dirs = set(exclude_dirs)
         self.min_characters = min_characters
+        self.extractor_factory = extractor_factory or ExtractorFactory()
 
     def discover_files(self) -> list[Path]:
         files: list[Path] = []
@@ -80,32 +146,10 @@ class CorpusParser:
                 handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     def _extract_text(self, path: Path) -> str:
-        suffix = path.suffix.lower()
-        if suffix in {".txt", ".md"}:
-            return self._read_text_file(path)
-        if suffix == ".pdf":
-            return self._read_pdf_file(path)
-        return ""
-
-    def _read_text_file(self, path: Path) -> str:
-        for encoding in ("utf-8", "latin-1"):
-            try:
-                return path.read_text(encoding=encoding)
-            except UnicodeDecodeError:
-                continue
-        return ""
-
-    def _read_pdf_file(self, path: Path) -> str:
-        try:
-            from pypdf import PdfReader
-        except ImportError as exc:
-            raise ImportError(
-                "Parsing PDF files requires `pypdf`. Install it to parse PDF content."
-            ) from exc
-
-        reader = PdfReader(str(path))
-        pages = [page.extract_text() or "" for page in reader.pages]
-        return "\n".join(pages)
+        extractor = self.extractor_factory.for_path(path)
+        if extractor is None:
+            return ""
+        return extractor.extract_text(path)
 
     def _build_doc_id(self, relative_path: Path) -> str:
         return hashlib.sha1(str(relative_path).encode("utf-8")).hexdigest()
@@ -132,4 +176,3 @@ class CorpusParser:
             if stripped.startswith("#"):
                 return stripped.lstrip("#").strip()
         return None
-

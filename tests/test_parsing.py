@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from src.ingestion.parsing import CorpusParser
+from src.ingestion.parsing import CorpusParser, ExtractorFactory, FileTextExtractor
 
 
 def test_discover_files_filters_extensions_and_excluded_dirs(tmp_path: Path) -> None:
@@ -59,3 +59,21 @@ def test_to_llama_documents_requires_llama_index(tmp_path: Path) -> None:
             raised = True
         assert raised is True
 
+
+def test_parser_supports_custom_extractor_via_dependency_injection(tmp_path: Path) -> None:
+    class UpperExtractor(FileTextExtractor):
+        def extract_text(self, path: Path) -> str:
+            return path.read_text(encoding="utf-8").upper()
+
+    (tmp_path / "notes.txt").write_text("alpha beta gamma", encoding="utf-8")
+    factory = ExtractorFactory(extractors={".txt": UpperExtractor()})
+    parser = CorpusParser(
+        source_dir=tmp_path,
+        include_extensions=(".txt",),
+        min_characters=5,
+        extractor_factory=factory,
+    )
+    parsed = parser.parse()
+
+    assert len(parsed) == 1
+    assert parsed[0].text == "ALPHA BETA GAMMA"
