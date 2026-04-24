@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 from pathlib import Path
+import time
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
@@ -341,11 +342,24 @@ class RemoteHTTPEmbedding(BaseEmbedding):
 
     _endpoint: str = PrivateAttr()
     _timeout_seconds: float = PrivateAttr()
+    _max_retries: int = PrivateAttr()
+    _resolved_single_strategy: tuple[str, str] | None = PrivateAttr()
+    _resolved_batch_strategy: tuple[str, str] | None = PrivateAttr()
 
-    def __init__(self, *, model_name: str, endpoint: str, timeout_seconds: float = 30.0) -> None:
+    def __init__(
+        self,
+        *,
+        model_name: str,
+        endpoint: str,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 2,
+    ) -> None:
         super().__init__(model_name=model_name)
         self._endpoint = endpoint.rstrip("/")
         self._timeout_seconds = timeout_seconds
+        self._max_retries = max(0, max_retries)
+        self._resolved_single_strategy = None
+        self._resolved_batch_strategy = None
 
     def _get_query_embedding(self, query: str) -> list[float]:
         return self._embed(query)
@@ -353,73 +367,188 @@ class RemoteHTTPEmbedding(BaseEmbedding):
     def _get_text_embedding(self, text: str) -> list[float]:
         return self._embed(text)
 
+    def _get_text_embeddings(self, texts: list[str]) -> list[list[float]]:
+        """Embed a text batch in one network call when endpoint supports it."""
+        return self._embed_batch(texts)
+
     async def _aget_query_embedding(self, query: str) -> list[float]:
         return self._embed(query)
 
     def _embed(self, text: str) -> list[float]:
+        return self._embed_single(text)
+
+    def _embed_batch(self, texts: list[str]) -> list[list[float]]:
+        if not texts:
+            return []
+        if len(texts) == 1:
+            return [self._embed_single(texts[0])]
+
+        # Fast path: reuse previously successful batch strategy.
+        if self._resolved_batch_strategy is not None:
+            path, mode = self._resolved_batch_strategy
+            try:
+                response = self._post_json(path=path, payload=self._build_payload(mode=mode, texts=texts))
+                vectors = self._extract_embeddings(response)
+                if len(vectors) == len(texts):
+                    return vectors
+            except Exception:
+                self._resolved_batch_strategy = None
+
         attempts = (
-            ("/embed", {"inputs": text}),
-            ("/embed", {"inputs": [text]}),
-            ("/v1/embeddings", {"input": text, "model": self.model_name}),
-            ("/embeddings", {"input": text, "model": self.model_name}),
+            ("/embed", "tei_batch"),
+            ("/v1/embeddings", "openai_batch"),
+            ("/embeddings", "openai_batch"),
         )
         last_error: Exception | None = None
-        for path, payload in attempts:
+        for path, mode in attempts:
             try:
-                response = self._post_json(path=path, payload=payload)
-                vector = self._extract_embedding(response)
-                if vector:
-                    return vector
+                response = self._post_json(path=path, payload=self._build_payload(mode=mode, texts=texts))
+                vectors = self._extract_embeddings(response)
+                if len(vectors) == len(texts):
+                    self._resolved_batch_strategy = (path, mode)
+                    return vectors
+                if len(vectors) == 1:
+                    # Endpoint likely does not support batch payload for this route.
+                    break
             except Exception as exc:
                 last_error = exc
                 continue
+
+        # Fallback: embed each text independently. Slower, but robust.
+        try:
+            return [self._embed_single(text) for text in texts]
+        except Exception as exc:
+            if last_error is not None:
+                raise RuntimeError(
+                    f"Failed to embed text batch via endpoint={self._endpoint}. "
+                    "Batch payloads failed and single-item fallback also failed."
+                ) from exc
+            raise
+
+    def _embed_single(self, text: str) -> list[float]:
+        """Embed one text item using the first working request shape."""
+        if self._resolved_single_strategy is not None:
+            path, mode = self._resolved_single_strategy
+            try:
+                response = self._post_json(path=path, payload=self._build_payload(mode=mode, text=text))
+                vectors = self._extract_embeddings(response)
+                if vectors:
+                    return vectors[0]
+            except Exception:
+                self._resolved_single_strategy = None
+
+        attempts = (
+            ("/embed", "tei_single"),
+            ("/embed", "tei_batch_1"),
+            ("/v1/embeddings", "openai_single"),
+            ("/v1/embeddings", "openai_batch_1"),
+            ("/embeddings", "openai_single"),
+            ("/embeddings", "openai_batch_1"),
+        )
+        last_error: Exception | None = None
+        for path, mode in attempts:
+            try:
+                response = self._post_json(path=path, payload=self._build_payload(mode=mode, text=text))
+                vectors = self._extract_embeddings(response)
+                if vectors:
+                    self._resolved_single_strategy = (path, mode)
+                    return vectors[0]
+            except Exception as exc:
+                last_error = exc
+                continue
+
         raise RuntimeError(
             f"Failed to embed text via endpoint={self._endpoint}. "
-            f"Tried /embed and /v1/embeddings-style payloads."
+            "Tried /embed and /v1/embeddings-style payloads."
         ) from last_error
+
+    def _build_payload(
+        self,
+        *,
+        mode: str,
+        text: str | None = None,
+        texts: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Build request payload for supported endpoint compatibility modes."""
+        if mode == "tei_single":
+            if text is None:
+                raise ValueError("tei_single mode requires `text`.")
+            return {"inputs": text}
+        if mode == "tei_batch_1":
+            if text is None:
+                raise ValueError("tei_batch_1 mode requires `text`.")
+            return {"inputs": [text]}
+        if mode == "tei_batch":
+            if texts is None:
+                raise ValueError("tei_batch mode requires `texts`.")
+            return {"inputs": texts}
+        if mode == "openai_single":
+            if text is None:
+                raise ValueError("openai_single mode requires `text`.")
+            return {"input": text, "model": self.model_name}
+        if mode == "openai_batch_1":
+            if text is None:
+                raise ValueError("openai_batch_1 mode requires `text`.")
+            return {"input": [text], "model": self.model_name}
+        if mode == "openai_batch":
+            if texts is None:
+                raise ValueError("openai_batch mode requires `texts`.")
+            return {"input": texts, "model": self.model_name}
+        raise ValueError(f"Unknown embedding payload mode: {mode}")
 
     def _post_json(self, path: str, payload: dict[str, Any]) -> Any:
         url = self._endpoint + path
         body = json.dumps(payload).encode("utf-8")
-        request = urllib_request.Request(
-            url=url,
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            with urllib_request.urlopen(request, timeout=self._timeout_seconds) as response:
-                content = response.read().decode("utf-8")
-        except urllib_error.HTTPError as exc:
-            message = exc.read().decode("utf-8", errors="ignore")
-            raise RuntimeError(f"Embedding HTTP {exc.code} from {url}: {message[:500]}") from exc
-        except urllib_error.URLError as exc:
-            raise RuntimeError(f"Embedding endpoint unreachable: {url}") from exc
+        content: str | None = None
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            request = urllib_request.Request(
+                url=url,
+                data=body,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                with urllib_request.urlopen(request, timeout=self._timeout_seconds) as response:
+                    content = response.read().decode("utf-8")
+                break
+            except urllib_error.HTTPError as exc:
+                message = exc.read().decode("utf-8", errors="ignore")
+                raise RuntimeError(f"Embedding HTTP {exc.code} from {url}: {message[:500]}") from exc
+            except (urllib_error.URLError, TimeoutError, OSError) as exc:
+                last_error = exc
+                if attempt < self._max_retries:
+                    time.sleep(min(2**attempt, 4))
+                    continue
+        if content is None:
+            raise RuntimeError(f"Embedding endpoint unreachable: {url}") from last_error
         try:
             return json.loads(content)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"Embedding endpoint returned non-JSON response from {url}") from exc
 
     @staticmethod
-    def _extract_embedding(payload: Any) -> list[float]:
+    def _extract_embeddings(payload: Any) -> list[list[float]]:
         # OpenAI-compatible: {"data":[{"embedding":[...]}]}
         if isinstance(payload, dict):
             if "data" in payload and isinstance(payload["data"], list) and payload["data"]:
-                first = payload["data"][0]
-                if isinstance(first, dict) and isinstance(first.get("embedding"), list):
-                    return [float(x) for x in first["embedding"]]
+                vectors: list[list[float]] = []
+                for item in payload["data"]:
+                    if isinstance(item, dict) and isinstance(item.get("embedding"), list):
+                        vectors.append([float(x) for x in item["embedding"]])
+                if vectors:
+                    return vectors
             if isinstance(payload.get("embedding"), list):
-                return [float(x) for x in payload["embedding"]]
+                return [[float(x) for x in payload["embedding"]]]
             if "embeddings" in payload and isinstance(payload["embeddings"], list) and payload["embeddings"]:
-                first = payload["embeddings"][0]
-                if isinstance(first, list):
-                    return [float(x) for x in first]
+                if isinstance(payload["embeddings"][0], list):
+                    return [[float(x) for x in vec] for vec in payload["embeddings"]]
 
         # TEI can return [..] or [[..]]
         if isinstance(payload, list) and payload:
             if isinstance(payload[0], (int, float)):
-                return [float(x) for x in payload]
+                return [[float(x) for x in payload]]
             if isinstance(payload[0], list):
-                return [float(x) for x in payload[0]]
+                return [[float(x) for x in vec] for vec in payload]
 
         raise ValueError("Embedding payload shape not recognized.")

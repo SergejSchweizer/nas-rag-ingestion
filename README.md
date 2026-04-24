@@ -41,6 +41,8 @@ Current implementation focus: **document parsing, semantic structuring, incremen
   - [Ingestion state](#ingestion-state)
   - [Indexing state](#indexing-state)
 - [CLI Reference](#cli-reference)
+  - [Parser PDF Audit](#parser-pdf-audit)
+  - [Random Parser PDF Audit Batch](#random-parser-pdf-audit-batch)
 - [Development](#development)
   - [Quality gates](#quality-gates)
   - [Recommended Wiki-Style Reading Order](#recommended-wiki-style-reading-order)
@@ -413,6 +415,65 @@ Options:
 - `--batch-size`
 - `--log-dir`
 - `--log-level`
+
+### Parser PDF Audit
+Use this to recreate one original PDF with parser structure overlays:
+- red labeled frames placed at extracted chunk bounding boxes
+
+Important:
+- Exact in-page placement requires `elements[].metadata.bboxes` in parsed JSONL.
+- If missing, re-run parser first (`scripts/parse_corpus.py --no-skip-unchanged`) to regenerate JSONL with bbox metadata.
+
+`python3 scripts/annotate_parsed_pdf.py [options]`
+
+Options:
+- `--parsed-jsonl`
+- `--doc-id`
+- `--relative-path`
+- `--source-pdf`
+- `--output-pdf`
+- `--max-lines-per-note`
+
+Selector rule:
+- Provide exactly one selector: `--doc-id` OR `--relative-path` OR `--source-pdf`.
+
+Examples:
+```bash
+python3 scripts/annotate_parsed_pdf.py \
+  --parsed-jsonl data/parsed/parsed_documents.jsonl \
+  --relative-path "crypto/whitepaper.pdf" \
+  --output-pdf data/parsed/whitepaper.annotated.pdf
+```
+
+```bash
+python3 scripts/annotate_parsed_pdf.py \
+  --doc-id "<DOC_ID>" \
+  --output-pdf data/parsed/doc.annotated.pdf
+```
+
+### Random Parser PDF Audit Batch
+Use this to recreate `N` random original PDFs with parser labels.
+
+`python3 scripts/annotate_random_parsed_pdfs.py [options]`
+
+Options:
+- `--parsed-jsonl`
+- `--count`
+- `--output-dir`
+- `--seed`
+- `--max-lines-per-note`
+- `--max-labels-per-page`
+- `--overwrite`
+
+Example:
+```bash
+python3 scripts/annotate_random_parsed_pdfs.py \
+  --parsed-jsonl data/parsed/parsed_documents.jsonl \
+  --count 10 \
+  --output-dir /volume1/Temp \
+  --seed 42 \
+  --overwrite
+```
 
 ## Development
 ### Quality gates

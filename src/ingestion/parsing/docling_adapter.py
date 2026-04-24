@@ -79,6 +79,40 @@ class DoclingAdapter:
                 rows.append(row)
         return rows
 
+    def item_bboxes(self, item: Any) -> list[dict[str, Any]]:
+        """Extract normalized bbox descriptors from Docling provenance."""
+        provenance = getattr(item, "prov", None)
+        if not provenance:
+            return []
+
+        boxes: list[dict[str, Any]] = []
+        for prov in provenance:
+            page_no = getattr(prov, "page_no", None)
+            bbox = getattr(prov, "bbox", None)
+            if bbox is None:
+                continue
+
+            l = self._coord_value(bbox, "l", "left", "x0", "x_min")
+            t = self._coord_value(bbox, "t", "top", "y0", "y_min")
+            r = self._coord_value(bbox, "r", "right", "x1", "x_max")
+            b = self._coord_value(bbox, "b", "bottom", "y1", "y_max")
+            if None in {l, t, r, b}:
+                continue
+
+            coord_origin = getattr(bbox, "coord_origin", None) or getattr(prov, "coord_origin", None)
+            origin_str = str(coord_origin).lower() if coord_origin is not None else "unknown"
+            boxes.append(
+                {
+                    "page": int(page_no) if isinstance(page_no, int) and page_no > 0 else 1,
+                    "l": float(l),
+                    "t": float(t),
+                    "r": float(r),
+                    "b": float(b),
+                    "origin": origin_str,
+                }
+            )
+        return boxes
+
     @staticmethod
     def item_types() -> dict[str, Any]:
         """Return Docling node item classes used for semantic mapping."""
@@ -218,3 +252,15 @@ class DoclingAdapter:
             if cols:
                 rows.append(cols)
         return rows
+
+    @staticmethod
+    def _coord_value(obj: Any, *keys: str) -> float | None:
+        """Read one coordinate value from object attributes or mapping keys."""
+        for key in keys:
+            if hasattr(obj, key):
+                value = getattr(obj, key)
+                if isinstance(value, (int, float)):
+                    return float(value)
+            if isinstance(obj, dict) and key in obj and isinstance(obj[key], (int, float)):
+                return float(obj[key])
+        return None

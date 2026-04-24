@@ -38,7 +38,7 @@ class SemanticExtractor:
                 continue
 
             page = self.docling_adapter.item_page(item=item)
-            metadata: dict[str, Any] = {}
+            metadata: dict[str, Any] = {"bboxes": self.docling_adapter.item_bboxes(item=item)}
 
             if isinstance(item, TitleItem):
                 element_type = "title"
@@ -116,6 +116,7 @@ class SemanticExtractor:
 
             parts = [current.text]
             rows = list(current.metadata.get("rows", []))
+            bboxes = list(current.metadata.get("bboxes", []))
             page = current.page
             section_path = current.section_path
             j = idx + 1
@@ -130,6 +131,7 @@ class SemanticExtractor:
                     parts.append(nxt.text)
                     if nxt.element_type == "table":
                         rows.extend(nxt.metadata.get("rows", []))
+                    bboxes.extend(nxt.metadata.get("bboxes", []))
                     j += 1
                     continue
                 break
@@ -137,6 +139,7 @@ class SemanticExtractor:
             metadata = dict(current.metadata)
             if current.element_type == "table":
                 metadata["rows"] = rows
+            metadata["bboxes"] = bboxes
 
             order += 1
             merged.append(
