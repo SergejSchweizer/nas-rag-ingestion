@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Tests for config loading and CLI override precedence resolution."""
 
-from src.ingestion.runtime_config import resolve_parse_runtime_config
+from src.ingestion.runtime_config import resolve_index_runtime_config, resolve_parse_runtime_config
 
 
 def test_resolve_parse_runtime_config_uses_config_paths() -> None:
@@ -111,3 +111,98 @@ def test_resolve_parse_runtime_config_preserves_zero_cli_overrides() -> None:
 
     assert resolved.preview_characters == 0
     assert resolved.min_characters == 0
+
+
+def test_resolve_index_runtime_config_uses_config_values() -> None:
+    """Index config resolver should map values from file config by default."""
+    cfg = {
+        "paths": {
+            "output_jsonl": "data/parsed/parsed_documents.jsonl",
+            "log_dir": "/volume1/Temp/logs",
+        },
+        "parsing": {
+            "log_level": "INFO",
+        },
+        "qdrant": {
+            "url": "http://localhost:6333",
+            "api_key": "secret",
+            "collection": "nas_docs",
+            "vector_size": 1024,
+            "distance": "Cosine",
+        },
+        "embeddings": {
+            "provider": "local",
+            "model": "bge-m3",
+            "endpoint": "http://localhost:11434",
+        },
+    }
+
+    resolved = resolve_index_runtime_config(cfg)
+    assert resolved.input_jsonl.endswith("parsed_documents.jsonl")
+    assert resolved.index_state_file.endswith("indexing_state.json")
+    assert resolved.qdrant_url == "http://localhost:6333"
+    assert resolved.qdrant_api_key == "secret"
+    assert resolved.qdrant_collection == "nas_docs"
+    assert resolved.qdrant_vector_size == 1024
+    assert resolved.qdrant_distance == "Cosine"
+    assert resolved.embedding_model == "bge-m3"
+    assert resolved.embedding_provider == "local"
+    assert resolved.embedding_endpoint == "http://localhost:11434"
+    assert resolved.log_dir == "/volume1/Temp/logs"
+    assert resolved.log_level == "INFO"
+    assert resolved.recreate_collection is False
+    assert resolved.batch_size == 128
+
+
+def test_resolve_index_runtime_config_cli_overrides_config() -> None:
+    """CLI overrides should take precedence for index runtime config."""
+    cfg = {
+        "paths": {
+            "output_jsonl": "data/parsed/parsed_documents.jsonl",
+            "log_dir": "/volume1/Temp/logs",
+        },
+        "parsing": {
+            "log_level": "INFO",
+        },
+        "qdrant": {
+            "url": "http://localhost:6333",
+            "api_key": "secret",
+            "collection": "nas_docs",
+            "vector_size": 1024,
+            "distance": "Cosine",
+        },
+        "embeddings": {
+            "provider": "local",
+            "model": "bge-m3",
+            "endpoint": "http://localhost:11434",
+        },
+    }
+
+    resolved = resolve_index_runtime_config(
+        cfg,
+        input_jsonl="/tmp/parsed.jsonl",
+        index_state_file="/tmp/indexing_state.json",
+        qdrant_url="http://10.10.10.10:6333",
+        qdrant_api_key="override-key",
+        qdrant_collection="override_docs",
+        embedding_model="qwen3:0.6b",
+        embedding_provider="ollama",
+        embedding_endpoint="http://10.10.10.10:11434",
+        log_dir="/tmp/logs",
+        log_level="DEBUG",
+        recreate_collection=True,
+        batch_size=32,
+    )
+
+    assert resolved.input_jsonl == "/tmp/parsed.jsonl"
+    assert resolved.index_state_file == "/tmp/indexing_state.json"
+    assert resolved.qdrant_url == "http://10.10.10.10:6333"
+    assert resolved.qdrant_api_key == "override-key"
+    assert resolved.qdrant_collection == "override_docs"
+    assert resolved.embedding_model == "qwen3:0.6b"
+    assert resolved.embedding_provider == "ollama"
+    assert resolved.embedding_endpoint == "http://10.10.10.10:11434"
+    assert resolved.log_dir == "/tmp/logs"
+    assert resolved.log_level == "DEBUG"
+    assert resolved.recreate_collection is True
+    assert resolved.batch_size == 32

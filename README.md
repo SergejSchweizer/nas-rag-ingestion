@@ -1,20 +1,60 @@
 # NAS RAG Ingestion
 
 CPU-first ingestion pipeline for local RAG workloads.  
-Current implementation focus: **document parsing, semantic structuring, and export artifacts** for downstream indexing and retrieval.
+Current implementation focus: **document parsing, semantic structuring, incremental indexing, and export artifacts** for downstream retrieval.
 
 ## Contents
 - [Project Status](#project-status)
+  - [Implemented](#implemented)
+  - [In Progress / Planned](#in-progress--planned)
 - [Architecture](#architecture)
+  - [Current (implemented)](#current-implemented)
+  - [Target (planned)](#target-planned)
+  - [System Relationship Map](#system-relationship-map)
 - [Repository Layout](#repository-layout)
 - [Quick Start](#quick-start)
+  - [1. Create environment](#1-create-environment)
+  - [2. Create local runtime config](#2-create-local-runtime-config)
+  - [3. Run parser](#3-run-parser)
+  - [4. Run sample-limited parse](#4-run-sample-limited-parse)
+  - [5. Index parsed chunks into Qdrant with LlamaIndex](#5-index-parsed-chunks-into-qdrant-with-llamaindex)
 - [Configuration Reference](#configuration-reference)
+  - [`paths`](#paths)
+  - [`parsing`](#parsing)
+  - [`chunking`](#chunking)
+  - [`qdrant`](#qdrant)
+  - [`embeddings`](#embeddings)
+  - [Model Endpoint Variables](#model-endpoint-variables)
 - [Parsing Pipeline](#parsing-pipeline)
+  - [Parsing Module Relationship Graph](#parsing-module-relationship-graph)
+  - [Semantic schema](#semantic-schema)
+  - [Child chunk types](#child-chunk-types)
+  - [Table and image handling](#table-and-image-handling)
+  - [Extending extracted fields](#extending-extracted-fields)
+  - [Idempotency and Incremental Ingestion Flow](#idempotency-and-incremental-ingestion-flow)
+  - [Output Contract Relationship (High Level)](#output-contract-relationship-high-level)
+  - [Metadata shape](#metadata-shape)
+- [Tested Hierarchy](#tested-hierarchy)
 - [Output Artifacts](#output-artifacts)
+  - [Parsed JSONL](#parsed-jsonl)
+  - [Tracking manifest](#tracking-manifest)
+  - [Ingestion state](#ingestion-state)
+  - [Indexing state](#indexing-state)
 - [CLI Reference](#cli-reference)
 - [Development](#development)
+  - [Quality gates](#quality-gates)
+  - [Recommended Wiki-Style Reading Order](#recommended-wiki-style-reading-order)
+  - [Current test coverage areas](#current-test-coverage-areas)
 - [Operations Runbook](#operations-runbook)
+  - [Standard parse run](#standard-parse-run)
+  - [Reprocess all files](#reprocess-all-files)
+  - [Validate incremental behavior](#validate-incremental-behavior)
+  - [Validate incremental indexing behavior](#validate-incremental-indexing-behavior)
 - [Troubleshooting](#troubleshooting)
+  - [`ModuleNotFoundError: No module named 'src'`](#modulenotfounderror-no-module-named-src)
+  - [Missing parser dependencies](#missing-parser-dependencies)
+  - [No output generated](#no-output-generated)
+  - [Many parse failures](#many-parse-failures)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
@@ -27,9 +67,12 @@ Current implementation focus: **document parsing, semantic structuring, and expo
 - Parent/child retrieval node generation.
 - JSONL export and readable tracking manifest export.
 - Idempotent state tracking to skip unchanged files.
+- LlamaIndex indexing stage for child chunks -> embeddings -> Qdrant.
+- Incremental indexing state (`index_state_file`) for skip-unchanged upserts.
+- Stale vector deletion for removed/changed chunks.
+- Live availability tests for embeddings, LLM endpoint, and Qdrant health.
 
 ### In Progress / Planned
-- Vector indexing (Qdrant write path).
 - Retrieval/query service integration.
 - OpenWebUI query endpoint wiring.
 
@@ -40,18 +83,62 @@ Current implementation focus: **document parsing, semantic structuring, and expo
 3. Build parent nodes from section boundaries.
 4. Build child nodes for retrieval granularity.
 5. Export JSONL + manifest.
-6. Update ingestion state.
+6. Index child chunks with LlamaIndex into Qdrant.
+7. Update ingestion + indexing state.
 
 ### Target (planned)
-1. Generate embeddings for child nodes.
-2. Upsert vectors + metadata to Qdrant.
-3. Serve retrieval/query endpoint for OpenWebUI.
+1. Serve retrieval/query endpoint for OpenWebUI.
+2. Add retrieval quality evaluation and reranking validation.
+3. Add end-to-end ingest-to-retrieval integration tests.
+
+### System Relationship Map
+```text
+                                  (Planned Query Path)
+                               +--------------------------+
+                               |        OpenWebUI         |
+                               +------------+-------------+
+                                            |
+                                            v
+                               +--------------------------+
+                               |   Retrieval API Service  |
+                               +------------+-------------+
+                                            |
+                                            v
+                               +--------------------------+
+                               |          Qdrant          |
+                               +------------+-------------+
+                                            ^
+                                            |
+                        (Implemented Indexing)
+                                            |
++-------------------+      +----------------+----------------+
+| Source Documents  |----->|  NAS RAG Ingestion (Current)   |
+| .pdf .md .txt     |      |  - discover/parse/chunk/export |
++-------------------+      |  - stateful skip-unchanged     |
+                           +----------------+----------------+
+                                            |
+                                            v
+                           +----------------+----------------+
+                           | Artifacts                        |
+                           | - parsed_documents.jsonl         |
+                           | - parsed_documents_manifest.json |
+                           | - ingestion_state.json           |
+                           | - indexing_state.json            |
+                           +----------------------------------+
+```
 
 ## Repository Layout
 ```text
 config/                      Runtime templates and local config
 scripts/                     CLI scripts
+  parse_corpus.py            Parse source documents into hierarchical chunks
+  index_corpus.py            Index child chunks into Qdrant via LlamaIndex
 src/ingestion/parsing/       Parsing pipeline and schema
+  parser.py                  Parse orchestration + semantic/chunk/metadata assembly
+  docling_adapter.py         Docling conversion + low-level Docling item extraction
+  semantic_extractor.py      Semantic element extraction + section-aware classification
+src/ingestion/indexing/
+  indexer.py                 LlamaIndex node build + Qdrant upsert flow
 src/ingestion/runtime_config.py
 src/logging_utils.py         Shared logging setup
 data/                        Local artifacts (ignored by default)
@@ -86,6 +173,11 @@ python3 scripts/parse_corpus.py --config config/config.yaml
 python3 scripts/parse_corpus.py --config config/config.yaml --max-files 50
 ```
 
+### 5. Index parsed chunks into Qdrant with LlamaIndex
+```bash
+python3 scripts/index_corpus.py --config config/config.yaml
+```
+
 Docling model cache behavior:
 - Models can download on first use (on-the-fly) and are cached under `DOCLING_ARTIFACTS_PATH`.
 - In this repo, the parser defaults `DOCLING_ARTIFACTS_PATH` to `./docling` when not already set.
@@ -98,6 +190,7 @@ Main keys in `config/config.yaml`:
 - `output_jsonl`: parsed records output.
 - `output_manifest`: human-readable summary output.
 - `state_file`: idempotency state store.
+- `index_state_file`: incremental indexing state store.
 - `log_dir`: weekly rotating log directory.
 
 ### `parsing`
@@ -111,9 +204,58 @@ Main keys in `config/config.yaml`:
 - `chunk_size`: child node token-window size.
 - `chunk_overlap`: child node overlap.
 
-Other sections (`qdrant`, `llm`, `embeddings`, `reranker`, `retrieval`, `openwebui`) are configuration placeholders for upcoming indexing/retrieval stages.
+### `qdrant`
+- `url`: Qdrant endpoint URL.
+- `api_key`: optional API key.
+- `collection`: target collection for vector upserts.
+- `vector_size`: vector dimension used for collection creation.
+- `distance`: vector distance metric (`Cosine`, `Dot`, `Euclid`, `Manhattan`).
+
+### `embeddings`
+- `provider`: embedding backend (`ollama` or `tei`).
+- `model`: embedding model identifier.
+- `endpoint`: provider endpoint URL built from `ip` + `port`.
+
+### Model Endpoint Variables
+Use only config values for model names and addresses:
+
+```yaml
+llm:
+  model: "<LLM_MODEL>"
+  endpoint: "http://<LLM_IP>:<LLM_PORT>"
+embeddings:
+  model: "<EMBEDDING_MODEL>"
+  endpoint: "http://<EMBEDDING_IP>:<EMBEDDING_PORT>"
+```
+
+Other sections (`llm`, `reranker`, `retrieval`, `openwebui`) are configuration placeholders for retrieval/query stages.
 
 ## Parsing Pipeline
+### Parsing Module Relationship Graph
+```text
+scripts/parse_corpus.py
+        |
+        v
+runtime_config.resolve_parse_runtime_config(...)
+        |
+        v
+CorpusParser ---------------------------------------------------+
+  |                                                             |
+  | uses                                                        | uses
+  v                                                             v
+DoclingAdapter                                           IngestionStateStore
+  |                                                             |
+  | converts files                                              | fingerprints + save/load/remove-missing
+  v                                                             v
+Docling Document ---------------------------------------> state_file.json
+        |
+        v
+SemanticExtractor (section path + type + merge)
+        |
+        v
+Semantic Elements -> Parent Nodes -> Child Nodes -> JSONL + Manifest
+```
+
 ### Semantic schema
 Each parsed document includes:
 - `elements`: ordered semantic units.
@@ -132,12 +274,64 @@ Each parsed document includes:
 - Figure child chunks include caption text plus nearby paragraph context (`figure_context`) when available.
 
 ### Extending extracted fields
-- Update semantic extraction rules in `src/ingestion/parsing/parser.py`:
-  - `_extract_semantic_elements(...)` to add new element types/metadata.
+- Update semantic extraction rules in `src/ingestion/parsing/semantic_extractor.py`:
+  - `extract(...)` to add new element types/metadata.
   - `_classify_text_block(...)` and `_looks_like_*` helpers for heuristic routing.
+- Update Docling-specific conversion/item handling in `src/ingestion/parsing/docling_adapter.py`:
+  - `convert(...)` for source-format conversion behavior.
+  - `extract_item_text(...)`, `item_page(...)`, and `table_rows(...)` for low-level Docling mapping.
 - Add document-level fields in `_build_metadata(...)`.
 - Add chunk-level fields in `_build_parent_nodes(...)` and `_build_child_nodes(...)`.
 - JSONL export already serializes full document/element/parent/child payloads; update `export_tracking_manifest(...)` if you also want new fields in the manifest.
+
+### Idempotency and Incremental Ingestion Flow
+```text
+discover_files()
+    |
+    v
+for each file ----------------------------------------------+
+    |                                                       |
+    v                                                       |
+fingerprint(file)                                           |
+    |                                                       |
+    v                                                       |
+should_ingest(relative_path, fingerprint)?                  |
+    | yes                                                   | no
+    v                                                       v
+parse + build nodes + metadata                        skipped_unchanged++
+    |
+    v
+record_ingested(relative_path, fingerprint, doc_id, char_count)
+    |
+    v
+end loop
+    |
+    v
+remove_missing(seen_relative_paths) [only when max_files is not set]
+    |
+    v
+save state
+```
+
+### Output Contract Relationship (High Level)
+```text
+ParsedDocument
+  |
+  +-- doc_id
+  +-- text
+  +-- metadata
+  |     +-- source_path / relative_path / file_ext
+  |     +-- paper_title / authors / year / topic
+  |     +-- elements_count / parent_nodes_count / child_nodes_count
+  |
+  +-- elements[*] (semantic sequence)
+  |     +-- element_type: title | section_heading | paragraph | table | figure_caption | equation | references
+  |
+  +-- parent_nodes[*] (section-aligned)
+  |
+  +-- child_nodes[*] (retrieval chunks)
+        +-- chunk_type: text | table | figure
+```
 
 ### Metadata shape
 Document metadata includes:
@@ -145,6 +339,26 @@ Document metadata includes:
 - topic, title, inferred paper metadata.
 - page and char-count stats.
 - element/parent/child counts.
+
+## Tested Hierarchy
+The ingestion hierarchy validated by tests is:
+
+1. `ParsedDocument` (document root)
+2. `elements` (ordered semantic sequence)
+3. `parent_nodes` (section-aligned hierarchy level)
+4. `child_nodes` (retrieval chunks linked to parent nodes)
+
+Incremental indexing hierarchy validated by tests is:
+
+1. `doc_id`
+2. deterministic `point_id` (UUID)
+3. `content_hash` snapshot in `index_state_file`
+4. stale-point deletion when a previously indexed point no longer exists in current doc snapshot
+
+Related tests:
+- `tests/test_parsing.py`
+- `tests/test_indexing_state.py`
+- `tests/test_model_availability.py`
 
 ## Output Artifacts
 ### Parsed JSONL
@@ -162,6 +376,11 @@ Document metadata includes:
 - Stores per-file fingerprints and last ingestion metadata.
 - Enables deterministic skip-unchanged behavior.
 
+### Indexing state
+- Path: `paths.index_state_file`
+- Stores per-doc point_id -> content_hash snapshots.
+- Enables incremental indexing skip and stale-point deletion.
+
 ## CLI Reference
 `python3 scripts/parse_corpus.py [options]`
 
@@ -178,17 +397,43 @@ Options:
 - `--log-dir`
 - `--log-level`
 
+`python3 scripts/index_corpus.py [options]`
+
+Options:
+- `--config`
+- `--input-jsonl`
+- `--index-state-file`
+- `--qdrant-url`
+- `--qdrant-api-key`
+- `--qdrant-collection`
+- `--embedding-model`
+- `--embedding-provider`
+- `--embedding-endpoint`
+- `--recreate-collection`
+- `--batch-size`
+- `--log-dir`
+- `--log-level`
+
 ## Development
 ### Quality gates
 ```bash
 .venv/bin/pytest -q
 ```
 
+### Recommended Wiki-Style Reading Order
+1. Read `Architecture` to understand current vs target scope.
+2. Read `Parsing Pipeline` and its relationship graphs.
+3. Read `Configuration Reference` to understand runtime controls.
+4. Read `Output Artifacts` before integrating downstream systems.
+5. Use `Operations Runbook` + `Troubleshooting` for day-2 operations.
+
 ### Current test coverage areas
 - parsing behavior and semantic extraction.
 - skip-unchanged state flow.
+- incremental indexing state behavior.
 - config resolution and override precedence.
 - logging configuration.
+- live endpoint availability checks for embeddings, llm, and qdrant.
 
 ## Operations Runbook
 ### Standard parse run
@@ -204,6 +449,11 @@ Run with `--no-skip-unchanged`.
 1. Run parser once.
 2. Run parser again with unchanged corpus.
 3. Confirm `skipped_unchanged` increases.
+
+### Validate incremental indexing behavior
+1. Run `scripts/index_corpus.py` once.
+2. Run it again against unchanged JSONL.
+3. Confirm `Skipped nodes` increases and `Indexed` remains low/zero.
 
 ## Troubleshooting
 ### `ModuleNotFoundError: No module named 'src'`
@@ -229,9 +479,9 @@ Check:
 Review logs in `paths.log_dir` and inspect `UNPARSED_FILE` lines.
 
 ## Roadmap
-- Add embedding + Qdrant indexing stage.
 - Add retrieval/query service for OpenWebUI.
-- Add integration tests for end-to-end ingest-to-retrieval flow.
+- Add end-to-end ingest-to-retrieval integration tests.
+- Add retrieval quality and reranking evaluation benchmarks.
 
 ## Contributing
 - Keep changes CPU-compatible.

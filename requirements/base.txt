@@ -5,8 +5,7 @@ qdrant-client==1.9.0
 
 # Local model integrations (CPU-only target; no GPU/CUDA deps)
 llama-index-llms-ollama==0.3.0
-llama-index-embeddings-huggingface==0.3.0
-sentence-transformers==3.0.0
+llama-index-embeddings-ollama==0.3.0
 
 # Parsing and config
 docling==2.91.0

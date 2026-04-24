@@ -3,6 +3,7 @@ paths:
   output_jsonl: "data/parsed/parsed_documents.jsonl"
   output_manifest: "data/parsed/parsed_documents_manifest.json"
   state_file: "data/state/ingestion_state.json"
+  index_state_file: "data/state/indexing_state.json"
   log_dir: "/volume1/Temp/logs"
 
 parsing:
@@ -21,20 +22,20 @@ qdrant:
 
 llm:
   provider: "local"
-  model: "llama"
-  endpoint: "http://localhost:11434"
+  model: "<LLM_MODEL>"
+  endpoint: "http://<LLM_IP>:<LLM_PORT>"
   api_key: "<optional>"
 
 embeddings:
-  provider: "local"
-  model: "bge-m3"
-  endpoint: "http://localhost:11434"
+  provider: "<EMBEDDING_PROVIDER>"
+  model: "<EMBEDDING_MODEL>"
+  endpoint: "http://<EMBEDDING_IP>:<EMBEDDING_PORT>"
   api_key: "<optional>"
 
 reranker:
   provider: "local"
-  model: "llama-reranker"
-  endpoint: "http://localhost:11434"
+  model: "<RERANKER_MODEL>"
+  endpoint: "http://<RERANKER_IP>:<RERANKER_PORT>"
   top_n: 4
 
 ingestion:
