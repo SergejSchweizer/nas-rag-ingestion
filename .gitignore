@@ -6,6 +6,7 @@ desktop.ini
 # Editors / IDEs
 .vscode/
 .idea/
+.codex
 *.swp
 *.swo
 *~
@@ -51,6 +52,7 @@ tmp/
 temp/
 .cache/
 data/
+docling/
 
 # Archives
 *.zip

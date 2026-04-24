@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 
 from src.ingestion.parsing import CorpusParser
+from src.ingestion.parsing.models import ParsedDocument
 
 
 def test_discover_files_filters_extensions_and_excluded_dirs(tmp_path: Path) -> None:
@@ -69,24 +70,6 @@ def test_parse_respects_max_files_limit(tmp_path: Path) -> None:
     assert rel_paths == {"notes/a.txt", "notes/b.txt"}
 
 
-def test_to_llama_documents_requires_llama_index(tmp_path: Path) -> None:
-    """Conversion to LlamaIndex documents should fail clearly when dependency is missing."""
-    (tmp_path / "notes.txt").write_text("Enough characters for parsing.", encoding="utf-8")
-    parser = CorpusParser(source_dir=tmp_path, include_extensions=(".txt",), min_characters=5)
-    parsed = parser.parse()
-    assert len(parsed) == 1
-
-    try:
-        import llama_index  # noqa: F401
-    except ImportError:
-        try:
-            parser.to_llama_documents(parsed)
-            raised = False
-        except ImportError:
-            raised = True
-        assert raised is True
-
-
 def test_export_tracking_manifest_has_readable_summary(tmp_path: Path) -> None:
     """Tracking manifest should include summary counters and per-document preview."""
     (tmp_path / "paper.md").write_text(
@@ -104,6 +87,28 @@ def test_export_tracking_manifest_has_readable_summary(tmp_path: Path) -> None:
     assert payload["total_characters"] == parsed[0].metadata["char_count"]
     assert payload["documents"][0]["title"] == "Paper Title"
     assert payload["documents"][0]["text_preview"].endswith("...")
+
+
+def test_export_jsonl_keeps_existing_file_when_result_is_empty(tmp_path: Path) -> None:
+    """JSONL export should preserve existing output when configured to keep empty runs."""
+    parser = CorpusParser(source_dir=tmp_path, include_extensions=(".txt",), min_characters=1)
+    output_path = tmp_path / "parsed_documents.jsonl"
+
+    seeded = ParsedDocument(
+        doc_id="doc-1",
+        text="seed text",
+        metadata={"char_count": 9},
+        elements=(),
+        parent_nodes=(),
+        child_nodes=(),
+    )
+    parser.export_jsonl([seeded], output_path)
+    before = output_path.read_text(encoding="utf-8")
+
+    parser.export_jsonl([], output_path, keep_existing_if_empty=True)
+    after = output_path.read_text(encoding="utf-8")
+
+    assert after == before
 
 
 def test_parse_with_state_skips_unchanged_files(tmp_path: Path) -> None:

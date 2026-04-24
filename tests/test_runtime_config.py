@@ -83,3 +83,31 @@ def test_resolve_parse_runtime_config_cli_overrides_config() -> None:
     assert resolved.skip_unchanged is False
     assert resolved.child_chunk_size == 800
     assert resolved.child_chunk_overlap == 120
+
+
+def test_resolve_parse_runtime_config_preserves_zero_cli_overrides() -> None:
+    """Integer CLI overrides should preserve explicit zero values."""
+    cfg = {
+        "paths": {
+            "source_dir": "/a",
+            "output_jsonl": "/b",
+            "output_manifest": "/c",
+            "state_file": "/d",
+            "log_dir": "/e",
+        },
+        "parsing": {
+            "min_characters": 40,
+            "preview_characters": 240,
+            "skip_unchanged": True,
+            "log_level": "INFO",
+        },
+    }
+
+    resolved = resolve_parse_runtime_config(
+        cfg,
+        preview_characters=0,
+        min_characters=0,
+    )
+
+    assert resolved.preview_characters == 0
+    assert resolved.min_characters == 0

@@ -9,6 +9,18 @@ subsequent chunking and indexing stages.
 
 import argparse
 import logging
+import os
+from pathlib import Path
+import sys
+
+# Support running the script directly from the repository root without
+# requiring editable installation first.
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+# Keep Docling artifacts in a repo-local cache by default.
+os.environ.setdefault("DOCLING_ARTIFACTS_PATH", str(REPO_ROOT / "docling"))
 
 from src.ingestion.parsing import CorpusParser
 from src.ingestion.runtime_config import load_yaml_config, resolve_parse_runtime_config
@@ -113,7 +125,11 @@ def main() -> None:
         state_file=runtime.state_file,
         skip_unchanged=runtime.skip_unchanged,
     )
-    parser.export_jsonl(parsed_docs, runtime.output_jsonl)
+    parser.export_jsonl(
+        parsed_docs,
+        runtime.output_jsonl,
+        keep_existing_if_empty=True,
+    )
     parser.export_tracking_manifest(
         parsed_docs,
         runtime.output_manifest,

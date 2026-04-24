@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 import hashlib
 import json
 import logging
+import os
 from pathlib import Path
 import re
 from typing import Any, Iterable
@@ -35,7 +36,7 @@ class ParseRunStats:
 
 
 class CorpusParser:
-    """Parse a local corpus into normalized records for LlamaIndex.
+    """Parse a local corpus into normalized records for ingestion.
 
     Docling is used as the canonical parser for supported formats. A small
     compatibility layer maps Docling items into the repository's semantic schema.
@@ -188,42 +189,21 @@ class CorpusParser:
         )
         return documents
 
-    def to_llama_documents(self, parsed_docs: list[ParsedDocument]) -> list:
-        """Convert parsed records into LlamaIndex `Document` objects."""
-        try:
-            from llama_index.core import Document
-        except ImportError as exc:
-            raise ImportError(
-                "llama-index is required to build LlamaIndex Document objects. "
-                "Install it with your dependency manager first."
-            ) from exc
-
-        llama_docs = []
-        for doc in parsed_docs:
-            for child in doc.child_nodes:
-                child_metadata = dict(child.metadata)
-                child_metadata.update(
-                    {
-                        "doc_id": doc.doc_id,
-                        "parent_id": child.parent_id,
-                        "child_id": child.child_id,
-                        "section_path": list(child.section_path),
-                        "chunk_level": child.chunk_level,
-                        "chunk_type": child.chunk_type,
-                    }
-                )
-                llama_docs.append(
-                    Document(
-                        text=child.text,
-                        metadata=child_metadata,
-                        doc_id=child.child_id,
-                    )
-                )
-        return llama_docs
-
-    def export_jsonl(self, parsed_docs: list[ParsedDocument], output_file: str | Path) -> None:
+    def export_jsonl(
+        self,
+        parsed_docs: list[ParsedDocument],
+        output_file: str | Path,
+        *,
+        keep_existing_if_empty: bool = False,
+    ) -> None:
         """Write parsed documents as JSONL for traceability and offline inspection."""
         output_path = Path(output_file)
+        if keep_existing_if_empty and not parsed_docs and output_path.exists():
+            LOGGER.info(
+                "Skipping JSONL overwrite because parse result is empty and keep_existing_if_empty=True. path=%s",
+                output_path,
+            )
+            return
         output_path.parent.mkdir(parents=True, exist_ok=True)
         with output_path.open("w", encoding="utf-8") as handle:
             for doc in parsed_docs:
@@ -889,12 +869,71 @@ class CorpusParser:
     def _build_docling_converter() -> Any:
         """Create default Docling converter with clear dependency error message."""
         try:
-            from docling.document_converter import DocumentConverter
+            from docling.datamodel.base_models import InputFormat
+            from docling.datamodel.pipeline_options import PdfPipelineOptions
+            from docling.document_converter import DocumentConverter, PdfFormatOption
         except ImportError as exc:
             raise ImportError(
                 "Docling is required for parsing. Install dependencies from requirements/base.txt."
             ) from exc
+        artifacts_path = os.environ.get("DOCLING_ARTIFACTS_PATH")
+        if artifacts_path:
+            CorpusParser._ensure_rapidocr_models(Path(artifacts_path))
+            pipeline_options = PdfPipelineOptions(artifacts_path=artifacts_path)
+            return DocumentConverter(
+                format_options={
+                    InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options),
+                }
+            )
         return DocumentConverter()
+
+    @staticmethod
+    def _ensure_rapidocr_models(artifacts_path: Path) -> None:
+        """Ensure RapidOCR artifacts exist under the configured Docling artifacts path."""
+        required_paths = (
+            artifacts_path / "RapidOcr" / "torch" / "PP-OCRv4" / "det" / "ch_PP-OCRv4_det_mobile.pth",
+            artifacts_path / "RapidOcr" / "torch" / "PP-OCRv4" / "cls" / "ch_ptocr_mobile_v2.0_cls_mobile.pth",
+            artifacts_path / "RapidOcr" / "torch" / "PP-OCRv4" / "rec" / "ch_PP-OCRv4_rec_mobile.pth",
+            artifacts_path / "RapidOcr" / "paddle" / "PP-OCRv4" / "rec" / "ch_PP-OCRv4_rec_mobile" / "ppocr_keys_v1.txt",
+            artifacts_path / "RapidOcr" / "resources" / "fonts" / "FZYTK.TTF",
+        )
+        if all(path.exists() for path in required_paths):
+            return
+
+        try:
+            from docling.utils.model_downloader import download_models
+        except ImportError:
+            LOGGER.warning("Docling model downloader unavailable; skipping RapidOCR prefetch.")
+            return
+
+        artifacts_path.mkdir(parents=True, exist_ok=True)
+        LOGGER.info(
+            "RapidOCR models missing in %s. Downloading once to DOCLING_ARTIFACTS_PATH.",
+            artifacts_path,
+        )
+        download_models(
+            output_dir=artifacts_path,
+            with_layout=False,
+            with_tableformer=False,
+            with_tableformer_v2=False,
+            with_code_formula=False,
+            with_picture_classifier=False,
+            with_smolvlm=False,
+            with_granitedocling=False,
+            with_granitedocling_mlx=False,
+            with_smoldocling=False,
+            with_smoldocling_mlx=False,
+            with_granite_vision=False,
+            with_granite_chart_extraction=False,
+            with_granite_chart_extraction_v4=False,
+            with_rapidocr=True,
+            with_easyocr=False,
+        )
+        if not all(path.exists() for path in required_paths):
+            LOGGER.warning(
+                "RapidOCR download finished but required model files are still missing under %s.",
+                artifacts_path,
+            )
 
     def _build_doc_id(self, relative_path: Path) -> str:
         """Build stable document id from a source-relative path."""

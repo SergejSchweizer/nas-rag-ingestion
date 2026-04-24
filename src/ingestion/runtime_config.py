@@ -71,8 +71,12 @@ def resolve_parse_runtime_config(
     resolved_log_dir = log_dir or _required_str(paths_cfg, "log_dir")
 
     resolved_log_level = log_level or str(parsing_cfg.get("log_level", "INFO"))
-    resolved_preview_characters = preview_characters or int(parsing_cfg.get("preview_characters", 240))
-    resolved_min_characters = min_characters or int(parsing_cfg.get("min_characters", 40))
+    resolved_preview_characters = (
+        preview_characters if preview_characters is not None else int(parsing_cfg.get("preview_characters", 240))
+    )
+    resolved_min_characters = (
+        min_characters if min_characters is not None else int(parsing_cfg.get("min_characters", 40))
+    )
     resolved_max_files = max_files if max_files is not None else _optional_int(parsing_cfg.get("max_files"))
     default_skip_unchanged = bool(parsing_cfg.get("skip_unchanged", True))
     resolved_skip_unchanged = False if no_skip_unchanged else default_skip_unchanged
