@@ -1,0 +1,46 @@
+qdrant:
+  url: "http://localhost:6333"
+  api_key: "<set-in-local-config>"
+  collection: "nas_docs"
+  vector_size: 1024
+  distance: "Cosine"
+
+llm:
+  provider: "local"
+  model: "llama"
+  endpoint: "http://localhost:11434"
+  api_key: "<optional>"
+
+embeddings:
+  provider: "local"
+  model: "bge-m3"
+  endpoint: "http://localhost:11434"
+  api_key: "<optional>"
+
+reranker:
+  provider: "local"
+  model: "llama-reranker"
+  endpoint: "http://localhost:11434"
+  top_n: 4
+
+ingestion:
+  source_dirs:
+    - "/volume1/RAG/crypto"
+  file_types:
+    - ".pdf"
+    - ".md"
+    - ".txt"
+  recursive: true
+
+chunking:
+  strategy: "sentence"
+  chunk_size: 800
+  chunk_overlap: 120
+
+retrieval:
+  top_k: 8
+  similarity_cutoff: 0.2
+
+openwebui:
+  base_url: "http://localhost:3000"
+  backend_query_endpoint: "http://localhost:8000/query"
