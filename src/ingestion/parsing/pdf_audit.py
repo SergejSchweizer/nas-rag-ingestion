@@ -2,80 +2,11 @@ from __future__ import annotations
 
 """PDF audit utilities to overlay red labeled frames at parsed chunk coordinates."""
 
-import json
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import FreeText
-
-
-@dataclass(frozen=True)
-class ParsedRecord:
-    """Minimal parsed record shape needed for PDF chunk audit rendering."""
-
-    doc_id: str
-    source_path: str
-    relative_path: str
-    elements: tuple[dict[str, Any], ...]
-
-
-def load_parsed_record(
-    parsed_jsonl: str | Path,
-    *,
-    doc_id: str | None = None,
-    relative_path: str | None = None,
-    source_pdf: str | Path | None = None,
-) -> ParsedRecord:
-    """Load one parsed record from JSONL using one selector."""
-    if sum(value is not None for value in (doc_id, relative_path, source_pdf)) != 1:
-        raise ValueError("Provide exactly one selector: doc_id, relative_path, or source_pdf.")
-
-    source_pdf_norm = str(Path(source_pdf).resolve()) if source_pdf is not None else None
-    path = Path(parsed_jsonl)
-    if not path.exists():
-        raise FileNotFoundError(f"Parsed JSONL not found: {path}")
-
-    with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            raw = line.strip()
-            if not raw:
-                continue
-            row = json.loads(raw)
-            if not isinstance(row, dict):
-                continue
-            metadata = row.get("metadata", {})
-            if not isinstance(metadata, dict):
-                metadata = {}
-
-            if doc_id is not None and str(row.get("doc_id", "")) != doc_id:
-                continue
-            if relative_path is not None and str(metadata.get("relative_path", "")) != relative_path:
-                continue
-            if source_pdf_norm is not None:
-                current_source = str(Path(str(metadata.get("source_path", ""))).resolve())
-                if current_source != source_pdf_norm:
-                    continue
-
-            elements = row.get("elements", [])
-            if not isinstance(elements, list):
-                elements = []
-            return ParsedRecord(
-                doc_id=str(row.get("doc_id", "")),
-                source_path=str(metadata.get("source_path", "")),
-                relative_path=str(metadata.get("relative_path", "")),
-                elements=tuple(item for item in elements if isinstance(item, dict)),
-            )
-
-    selector = (
-        f"doc_id={doc_id!r}"
-        if doc_id is not None
-        else f"relative_path={relative_path!r}"
-        if relative_path is not None
-        else f"source_pdf={str(source_pdf)!r}"
-    )
-    raise ValueError(f"No parsed record matched selector: {selector} in {parsed_jsonl}")
 
 
 def annotate_pdf_with_chunks(
