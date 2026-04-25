@@ -18,8 +18,6 @@ class ParsedRecord:
     doc_id: str
     source_path: str
     relative_path: str
-    parent_nodes: tuple[dict[str, Any], ...]
-    child_nodes: tuple[dict[str, Any], ...]
     elements: tuple[dict[str, Any], ...]
 
 
@@ -60,12 +58,6 @@ def load_parsed_record(
                 if current_source != source_pdf_norm:
                     continue
 
-            child_nodes = row.get("child_nodes", [])
-            if not isinstance(child_nodes, list):
-                child_nodes = []
-            parent_nodes = row.get("parent_nodes", [])
-            if not isinstance(parent_nodes, list):
-                parent_nodes = []
             elements = row.get("elements", [])
             if not isinstance(elements, list):
                 elements = []
@@ -73,8 +65,6 @@ def load_parsed_record(
                 doc_id=str(row.get("doc_id", "")),
                 source_path=str(metadata.get("source_path", "")),
                 relative_path=str(metadata.get("relative_path", "")),
-                parent_nodes=tuple(item for item in parent_nodes if isinstance(item, dict)),
-                child_nodes=tuple(item for item in child_nodes if isinstance(item, dict)),
                 elements=tuple(item for item in elements if isinstance(item, dict)),
             )
 
@@ -92,19 +82,10 @@ def annotate_pdf_with_chunks(
     source_pdf: str | Path,
     output_pdf: str | Path,
     *,
-    doc_id: str,
     relative_path: str,
-    parent_nodes: tuple[dict[str, Any], ...],
-    child_nodes: tuple[dict[str, Any], ...],
     elements: tuple[dict[str, Any], ...],
-    max_lines_per_note: int = 14,
-    max_labels_per_page: int | None = None,
 ) -> None:
     """Write annotated PDF with red labeled frames around chunk bounding boxes."""
-    del parent_nodes
-    del child_nodes
-    del max_lines_per_note
-    del max_labels_per_page
 
     src = Path(source_pdf)
     if not src.exists():

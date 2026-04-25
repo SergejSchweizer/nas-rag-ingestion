@@ -45,18 +45,6 @@ def build_args() -> argparse.Namespace:
         help="Optional random seed for reproducible selection.",
     )
     parser.add_argument(
-        "--max-lines-per-note",
-        type=int,
-        default=18,
-        help="Maximum hierarchy lines per annotation note.",
-    )
-    parser.add_argument(
-        "--max-labels-per-page",
-        type=int,
-        default=0,
-        help="Maximum red-framed chunk labels per page (0 = all that fit).",
-    )
-    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite existing annotated output files.",
@@ -94,9 +82,11 @@ def load_pdf_rows(parsed_jsonl: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-def output_path(output_dir: str | Path, doc_id: str) -> Path:
-    """Build deterministic output file path for one document id."""
-    return Path(output_dir) / f"{doc_id}.annotated.pdf"
+def output_path(output_dir: str | Path, ordinal: int) -> Path:
+    """Build deterministic output file path for one sampled record index."""
+    if ordinal <= 0:
+        raise ValueError("ordinal must be greater than 0.")
+    return Path(output_dir) / f"{ordinal}.pdf"
 
 
 def main() -> None:
@@ -119,19 +109,16 @@ def main() -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     generated = 0
-    for row in selected_rows:
-        doc_id = str(row.get("doc_id", ""))
+    for ordinal, row in enumerate(selected_rows, start=1):
         metadata = row.get("metadata", {}) if isinstance(row.get("metadata"), dict) else {}
         source_pdf = Path(str(metadata.get("source_path", "")))
         relative_path = str(metadata.get("relative_path", ""))
-        child_nodes = tuple(item for item in row.get("child_nodes", []) if isinstance(item, dict))
-        parent_nodes = tuple(item for item in row.get("parent_nodes", []) if isinstance(item, dict))
         elements = tuple(item for item in row.get("elements", []) if isinstance(item, dict))
 
-        if not doc_id or not source_pdf.exists():
+        if not source_pdf.exists():
             continue
 
-        target = output_path(out_dir, doc_id)
+        target = output_path(out_dir, ordinal)
         if target.exists() and not args.overwrite:
             print(f"SKIP (exists): {target}")
             continue
@@ -139,13 +126,8 @@ def main() -> None:
         annotate_pdf_with_chunks(
             source_pdf=source_pdf,
             output_pdf=target,
-            doc_id=doc_id,
             relative_path=relative_path,
-            parent_nodes=parent_nodes,
-            child_nodes=child_nodes,
             elements=elements,
-            max_lines_per_note=args.max_lines_per_note,
-            max_labels_per_page=(None if args.max_labels_per_page == 0 else args.max_labels_per_page),
         )
         generated += 1
         print(f"OK: {target}")

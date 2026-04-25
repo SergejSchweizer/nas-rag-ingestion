@@ -82,10 +82,7 @@ def test_annotate_pdf_with_chunks_creates_red_frame_annotations(tmp_path: Path) 
     annotate_pdf_with_chunks(
         source_pdf=source_pdf,
         output_pdf=output_pdf,
-        doc_id=record.doc_id,
         relative_path=record.relative_path,
-        parent_nodes=record.parent_nodes,
-        child_nodes=record.child_nodes,
         elements=record.elements,
     )
 
@@ -132,10 +129,7 @@ def test_annotate_pdf_with_chunks_requires_bbox_data(tmp_path: Path) -> None:
         annotate_pdf_with_chunks(
             source_pdf=source_pdf,
             output_pdf=tmp_path / "annotated.pdf",
-            doc_id=record.doc_id,
             relative_path=record.relative_path,
-            parent_nodes=record.parent_nodes,
-            child_nodes=record.child_nodes,
             elements=record.elements,
         )
     except ValueError as exc:
