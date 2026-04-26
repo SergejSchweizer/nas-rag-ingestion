@@ -470,13 +470,22 @@ Run live endpoint integration checks explicitly:
 ```
 
 ### Git Pre-Commit Hook
-Repository hook (`.git/hooks/pre-commit`) runs Ruff, MyPy, and tests before commit:
+Repository hook (`.git/hooks/pre-commit`) runs Ruff autofix, Ruff validation, MyPy, and tests before commit:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Running ruff before commit..."
+echo "Running ruff autofix before commit..."
+.venv/bin/python -m ruff check --fix .
+
+if ! git diff --quiet; then
+  echo "Ruff applied fixes. Review and stage the updated files, then commit again."
+  git status --short
+  exit 1
+fi
+
+echo "Running ruff validation before commit..."
 .venv/bin/python -m ruff check .
 
 echo "Running mypy before commit..."
