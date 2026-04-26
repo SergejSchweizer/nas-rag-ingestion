@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ _TYPE_COLOR_HEX: dict[str, str] = {
     "references": "6b7280",
     "chunk": "dc2626",
 }
+
 
 def annotate_pdf_with_chunks(
     source_pdf: str | Path,
@@ -98,6 +100,10 @@ def _frames_by_page(elements: tuple[dict[str, Any], ...]) -> dict[int, list[dict
     for element in elements:
         element_index += 1
         element_type = str(element.get("element_type", "chunk"))
+        if element_type == "paragraph" and _looks_equation_like(str(element.get("text", ""))):
+            # Some parsed rows merge equation-heavy content into paragraph items.
+            # Audit overlays should still surface those regions as equations.
+            element_type = "equation"
         metadata = element.get("metadata", {})
         if not isinstance(metadata, dict):
             continue
@@ -307,3 +313,14 @@ def _safe_float(value: Any) -> float | None:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return max(low, min(high, value))
+
+
+def _looks_equation_like(text: str) -> bool:
+    """Heuristic for paragraph blocks that primarily encode equation text."""
+    if "=" not in text:
+        return False
+    if not re.search(r"\d", text):
+        return False
+    if re.search(r"[+\-*/^×÷]", text):
+        return True
+    return re.search(r"\b[A-Za-z]\w*\s*=\s*[\dA-Za-z(]", text) is not None
