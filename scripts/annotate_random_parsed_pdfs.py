@@ -39,11 +39,6 @@ def build_args() -> argparse.Namespace:
         default=None,
         help="Optional random seed for reproducible selection.",
     )
-    parser.add_argument(
-        "--overwrite",
-        action="store_true",
-        help="Overwrite existing annotated output files.",
-    )
     return parser.parse_args()
 
 
@@ -140,11 +135,6 @@ def main() -> None:
             continue
 
         target = output_path(out_dir, generated + 1)
-        if target.exists() and not args.overwrite:
-            raise SystemExit(
-                f"Target file already exists: {target}. "
-                "Use --overwrite to regenerate deterministic outputs 1..n."
-            )
 
         try:
             annotate_pdf_with_chunks(

@@ -32,9 +32,14 @@ class SemanticExtractor:
         order = 0
 
         for item, _level in doc.iterate_items(with_groups=False, traverse_pictures=True):
+            is_formula_item = isinstance(item, FormulaItem)
             text = self.docling_adapter.extract_item_text(item=item, doc=doc).strip()
             if not text:
-                continue
+                if is_formula_item:
+                    # Preserve formula regions even when upstream extraction returns empty text.
+                    text = "[equation]"
+                else:
+                    continue
 
             page = self.docling_adapter.item_page(item=item)
             metadata: dict[str, Any] = {"bboxes": self.docling_adapter.item_bboxes(item=item)}
@@ -46,7 +51,7 @@ class SemanticExtractor:
                 section_path = self._update_section_path(section_path, heading_level, text)
                 in_references = text.lower().startswith("references")
                 element_type = "section_heading"
-            elif isinstance(item, FormulaItem):
+            elif is_formula_item:
                 element_type = "equation"
             elif isinstance(item, TableItem):
                 element_type = "table"

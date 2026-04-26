@@ -107,3 +107,18 @@ def test_extract_preserves_bboxes_for_table_like_text() -> None:
     assert element.metadata["rows"]
     assert "bboxes" in element.metadata
     assert element.metadata["bboxes"]
+
+
+def test_extract_keeps_empty_formula_items_as_equations() -> None:
+    """Formula items with empty extracted text should still be preserved."""
+    adapter = _FakeAdapter()
+    extractor = SemanticExtractor(docling_adapter=adapter)  # type: ignore[arg-type]
+    doc = _FakeDoc(items=[_FormulaItem("")])
+
+    elements = extractor.extract(doc_id="doc", doc=doc)
+    assert len(elements) == 1
+    element = elements[0]
+    assert element.element_type == "equation"
+    assert element.text == "[equation]"
+    assert "bboxes" in element.metadata
+    assert element.metadata["bboxes"]

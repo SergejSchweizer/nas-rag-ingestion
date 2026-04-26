@@ -29,18 +29,6 @@ _TYPE_COLOR_HEX: dict[str, str] = {
     "chunk": "dc2626",
 }
 
-_TYPE_FILL_HEX: dict[str, str] = {
-    "title": "fde8e8",
-    "section_heading": "fff4e5",
-    "paragraph": "e8f6ec",
-    "table": "e8f0ff",
-    "figure_caption": "f2e8ff",
-    "equation": "e6f9f7",
-    "references": "f3f4f6",
-    "chunk": "fee2e2",
-}
-
-
 def annotate_pdf_with_chunks(
     source_pdf: str | Path,
     output_pdf: str | Path,
@@ -78,7 +66,6 @@ def annotate_pdf_with_chunks(
         for index, frame in enumerate(page_frames, start=1):
             rect = _to_pdf_rect(frame=frame, page=page)
             color = _color_for_type(str(frame.get("element_type", "chunk")))
-            fill_color = _fill_for_type(str(frame.get("element_type", "chunk")))
             dependency = dependencies.get(int(frame.get("element_index", index)))
             label = _frame_label(frame=frame, index=index, dependency=dependency)
             writer.add_annotation(
@@ -90,7 +77,7 @@ def annotate_pdf_with_chunks(
                     font_size="6pt",
                     font_color=color,
                     border_color=color,
-                    background_color=fill_color,
+                    background_color=None,
                 ),
             )
         _add_legend_annotations(
@@ -302,11 +289,6 @@ def _hierarchy_rank(element_type: str) -> int:
 def _color_for_type(element_type: str) -> str:
     """Return border/font color for an element type."""
     return _TYPE_COLOR_HEX.get(element_type, _TYPE_COLOR_HEX["chunk"])
-
-
-def _fill_for_type(element_type: str) -> str:
-    """Return light fill color for an element type."""
-    return _TYPE_FILL_HEX.get(element_type, _TYPE_FILL_HEX["chunk"])
 
 
 def _safe_int(value: Any, *, default: int) -> int:
