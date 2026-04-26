@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Runtime configuration loading for ingestion CLI flows."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -92,12 +92,16 @@ def resolve_parse_runtime_config(
 
     resolved_log_level = log_level or str(parsing_cfg.get("log_level", "INFO"))
     resolved_preview_characters = (
-        preview_characters if preview_characters is not None else int(parsing_cfg.get("preview_characters", 240))
+        preview_characters
+        if preview_characters is not None
+        else int(parsing_cfg.get("preview_characters", 240))
     )
     resolved_min_characters = (
         min_characters if min_characters is not None else int(parsing_cfg.get("min_characters", 40))
     )
-    resolved_max_files = max_files if max_files is not None else _optional_int(parsing_cfg.get("max_files"))
+    resolved_max_files = (
+        max_files if max_files is not None else _optional_int(parsing_cfg.get("max_files"))
+    )
     default_skip_unchanged = bool(parsing_cfg.get("skip_unchanged", True))
     resolved_skip_unchanged = False if no_skip_unchanged else default_skip_unchanged
     resolved_child_chunk_size = int(chunking_cfg.get("chunk_size", 800))
@@ -150,20 +154,38 @@ def resolve_index_runtime_config(
         raise ValueError("`embeddings` must be a mapping in config.")
 
     resolved_input_jsonl = input_jsonl or _required_str(paths_cfg, "output_jsonl")
-    resolved_index_state_file = index_state_file or str(paths_cfg.get("index_state_file", "data/state/indexing_state.json"))
-    resolved_qdrant_url = qdrant_url or _required_str(qdrant_cfg, "url")
-    resolved_qdrant_api_key = qdrant_api_key if qdrant_api_key is not None else _optional_str(qdrant_cfg.get("api_key"))
-    resolved_qdrant_collection = qdrant_collection or _required_str(qdrant_cfg, "collection")
+    resolved_index_state_file = index_state_file or str(
+        paths_cfg.get("index_state_file", "data/state/indexing_state.json")
+    )
+    resolved_qdrant_url = qdrant_url or _required_str(qdrant_cfg, "url", section="qdrant")
+    resolved_qdrant_api_key = (
+        qdrant_api_key if qdrant_api_key is not None else _optional_str(qdrant_cfg.get("api_key"))
+    )
+    resolved_qdrant_collection = qdrant_collection or _required_str(
+        qdrant_cfg,
+        "collection",
+        section="qdrant",
+    )
     resolved_qdrant_vector_size = int(qdrant_cfg.get("vector_size", 1024))
     resolved_qdrant_distance = str(qdrant_cfg.get("distance", "Cosine"))
-    resolved_embedding_model = embedding_model or _required_str(embeddings_cfg, "model")
+    resolved_embedding_model = embedding_model or _required_str(
+        embeddings_cfg,
+        "model",
+        section="embeddings",
+    )
     resolved_embedding_provider = embedding_provider or str(embeddings_cfg.get("provider", "tei"))
     resolved_embedding_endpoint = (
-        embedding_endpoint if embedding_endpoint is not None else _optional_str(embeddings_cfg.get("endpoint"))
+        embedding_endpoint
+        if embedding_endpoint is not None
+        else _optional_str(embeddings_cfg.get("endpoint"))
     )
     resolved_log_dir = log_dir or _required_str(paths_cfg, "log_dir")
     resolved_log_level = log_level or str(parsing_cfg.get("log_level", "INFO"))
-    resolved_batch_size = batch_size if batch_size is not None else int(config.get("indexing", {}).get("batch_size", 128))
+    resolved_batch_size = (
+        batch_size
+        if batch_size is not None
+        else int(config.get("indexing", {}).get("batch_size", 128))
+    )
 
     return IndexRuntimeConfig(
         input_jsonl=resolved_input_jsonl,
@@ -183,11 +205,11 @@ def resolve_index_runtime_config(
     )
 
 
-def _required_str(mapping: dict[str, Any], key: str) -> str:
+def _required_str(mapping: dict[str, Any], key: str, *, section: str = "paths") -> str:
     """Return required string value from mapping or raise configuration error."""
     value = mapping.get(key)
     if not value or not isinstance(value, str):
-        raise ValueError(f"Missing required config key: paths.{key}")
+        raise ValueError(f"Missing required config key: {section}.{key}")
     return value
 
 

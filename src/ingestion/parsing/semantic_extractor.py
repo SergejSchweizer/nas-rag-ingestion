@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Semantic extraction from Docling documents."""
+
+from __future__ import annotations
 
 import hashlib
 import re
@@ -55,9 +55,13 @@ class SemanticExtractor:
             elif isinstance(item, PictureItem):
                 element_type = "figure_caption"
             elif isinstance(item, TextItem):
-                element_type, metadata = self._classify_text_block(text=text, in_references=in_references)
+                element_type, metadata = self._classify_text_block(
+                    text=text, in_references=in_references
+                )
             else:
-                element_type, metadata = self._classify_text_block(text=text, in_references=in_references)
+                element_type, metadata = self._classify_text_block(
+                    text=text, in_references=in_references
+                )
 
             order += 1
             elements.append(
@@ -86,7 +90,9 @@ class SemanticExtractor:
             return "table", {"rows": self._rows_from_table_text(text)}
         return "paragraph", {}
 
-    def _merge_adjacent_elements(self, doc_id: str, elements: list[SemanticElement]) -> list[SemanticElement]:
+    def _merge_adjacent_elements(
+        self, doc_id: str, elements: list[SemanticElement]
+    ) -> list[SemanticElement]:
         """Merge adjacent compatible semantic elements into richer blocks."""
         if not elements:
             return []

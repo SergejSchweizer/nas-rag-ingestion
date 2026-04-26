@@ -2,4 +2,4 @@
 
 # Test and quality
 pytest-cov==5.0.0
-ruff==0.6.0
+types-PyYAML==6.0.12.20260408

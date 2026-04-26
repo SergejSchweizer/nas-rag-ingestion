@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """CLI entrypoint for the ingestion parsing stage.
 
 Parses local files into normalized JSONL records that can be consumed by
 subsequent chunking and indexing stages.
 """
 
+from __future__ import annotations
+
 import argparse
 import logging
 import os
 from pathlib import Path
-import sys
-
-# Support running the script directly from the repository root without
-# requiring editable installation first.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-
-# Keep Docling artifacts in a repo-local cache by default.
-os.environ.setdefault("DOCLING_ARTIFACTS_PATH", str(REPO_ROOT / "docling"))
 
 from src.ingestion.parsing import CorpusParser
 from src.ingestion.runtime_config import load_yaml_config, resolve_parse_runtime_config
@@ -93,6 +83,10 @@ def build_args() -> argparse.Namespace:
 
 def main() -> None:
     """Run parse flow and emit parsed JSONL artifact."""
+    # Keep Docling artifacts in a repo-local cache by default.
+    repo_root = Path(__file__).resolve().parents[1]
+    os.environ.setdefault("DOCLING_ARTIFACTS_PATH", str(repo_root / "docling"))
+
     args = build_args()
     config = load_yaml_config(args.config)
     runtime = resolve_parse_runtime_config(
@@ -111,7 +105,9 @@ def main() -> None:
 
     log_file_path = configure_weekly_logging(log_dir=runtime.log_dir, level=runtime.log_level)
     logger = logging.getLogger(__name__)
-    logger.info("Starting corpus parsing. source_dir=%s max_files=%s", runtime.source_dir, runtime.max_files)
+    logger.info(
+        "Starting corpus parsing. source_dir=%s max_files=%s", runtime.source_dir, runtime.max_files
+    )
     logger.info("Logging to %s (weekly rotation enabled)", log_file_path)
 
     parser = CorpusParser(
@@ -148,7 +144,8 @@ def main() -> None:
         f"parse_errors={parser.last_run_stats.parse_error_count}"
     )
     logger.info(
-        "Completed parsing. discovered=%s parsed=%s skipped_unchanged=%s removed_missing=%s parse_errors=%s",
+        "Completed parsing. discovered=%s parsed=%s skipped_unchanged=%s "
+        "removed_missing=%s parse_errors=%s",
         parser.last_run_stats.discovered_count,
         parser.last_run_stats.parsed_count,
         parser.last_run_stats.skipped_unchanged_count,

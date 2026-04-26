@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Tests for logging utility configuration and weekly rotation settings."""
+
+from __future__ import annotations
 
 import logging
 from logging.handlers import TimedRotatingFileHandler

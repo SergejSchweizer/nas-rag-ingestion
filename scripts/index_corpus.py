@@ -1,19 +1,11 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """CLI entrypoint for indexing parsed corpus artifacts into Qdrant via LlamaIndex."""
+
+from __future__ import annotations
 
 import argparse
 import logging
 import os
-from pathlib import Path
-import sys
-
-# Support running the script directly from the repository root without
-# requiring editable installation first.
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from src.ingestion.indexing import LlamaIndexIndexer
 from src.ingestion.runtime_config import load_yaml_config, resolve_index_runtime_config
@@ -22,7 +14,9 @@ from src.logging_utils import configure_weekly_logging
 
 def build_args() -> argparse.Namespace:
     """Define and parse command line arguments for corpus indexing."""
-    parser = argparse.ArgumentParser(description="Index parsed corpus JSONL to Qdrant using LlamaIndex.")
+    parser = argparse.ArgumentParser(
+        description="Index parsed corpus JSONL to Qdrant using LlamaIndex."
+    )
     parser.add_argument(
         "--config",
         default="config/config.yaml",
@@ -147,7 +141,8 @@ def main() -> None:
     print(f"Input JSONL: {runtime.input_jsonl}")
     print(f"Index state file: {runtime.index_state_file}")
     logger.info(
-        "Completed indexing. loaded_documents=%s indexed_nodes=%s skipped_nodes=%s deleted_nodes=%s",
+        "Completed indexing. loaded_documents=%s indexed_nodes=%s "
+        "skipped_nodes=%s deleted_nodes=%s",
         stats.loaded_documents,
         stats.indexed_nodes,
         stats.skipped_nodes,

@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Data models for ingestion parsing."""
+
+from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any

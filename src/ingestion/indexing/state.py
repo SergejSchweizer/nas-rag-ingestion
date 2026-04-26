@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """State tracking for incremental vector indexing."""
+
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
@@ -38,7 +38,9 @@ class IndexingStateStore:
         """Persist current state payload to disk."""
         self.state_file.parent.mkdir(parents=True, exist_ok=True)
         self.payload["updated_at_utc"] = self._now_utc()
-        self.state_file.write_text(json.dumps(self.payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self.state_file.write_text(
+            json.dumps(self.payload, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
 
     def _load(self) -> dict:
         """Load state payload from disk, falling back to defaults on corruption."""

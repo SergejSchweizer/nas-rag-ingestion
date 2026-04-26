@@ -1,18 +1,13 @@
 #!/usr/bin/env python3
-from __future__ import annotations
-
 """Create annotated parser-audit PDFs for a random subset of parsed PDF records."""
+
+from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
 import random
-import sys
+from pathlib import Path
 from typing import Any
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from src.ingestion.parsing.pdf_audit import annotate_pdf_with_chunks
 
@@ -100,7 +95,9 @@ def main() -> None:
     if available == 0:
         raise SystemExit("No eligible PDF records found in parsed JSONL.")
     if args.count > available:
-        raise SystemExit(f"Requested --count={args.count}, but only {available} PDF records are available.")
+        raise SystemExit(
+            f"Requested --count={args.count}, but only {available} PDF records are available."
+        )
 
     rng = random.Random(args.seed)
     selected_rows = rng.sample(rows, args.count)

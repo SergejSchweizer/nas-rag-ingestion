@@ -1,7 +1,7 @@
 """Tests for parsing, idempotency, manifest export, and Docling integration behavior."""
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 from src.ingestion.parsing import CorpusParser
 from src.ingestion.parsing.models import ParsedDocument

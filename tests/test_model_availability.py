@@ -1,13 +1,16 @@
-from __future__ import annotations
-
 """Live availability checks for embedding and LLM endpoints from runtime config."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
+import pytest
 import yaml
+
+pytestmark = pytest.mark.integration
 
 
 def _load_runtime_service_config() -> tuple[str, str, str, str, str, str | None]:
@@ -38,7 +41,9 @@ def _load_runtime_service_config() -> tuple[str, str, str, str, str, str | None]
     qdrant_api_key = str(qdrant.get("api_key", "")).strip() or None
 
     if not embedding_endpoint or not embedding_model:
-        raise AssertionError("`embeddings.endpoint` and `embeddings.model` are required in config/config.yaml.")
+        raise AssertionError(
+            "`embeddings.endpoint` and `embeddings.model` are required in config/config.yaml."
+        )
     if not llm_endpoint or not llm_model:
         raise AssertionError("`llm.endpoint` and `llm.model` are required in config/config.yaml.")
     if not qdrant_url:
@@ -71,7 +76,9 @@ def _http_json(
     content: str | None = None
     last_error: Exception | None = None
     for _ in range(retries + 1):
-        request = urllib_request.Request(url=url, data=data, headers=request_headers, method=method.upper())
+        request = urllib_request.Request(
+            url=url, data=data, headers=request_headers, method=method.upper()
+        )
         try:
             with urllib_request.urlopen(request, timeout=timeout) as response:
                 content = response.read().decode("utf-8")
@@ -99,7 +106,11 @@ def _extract_embedding_vector(payload: object) -> list[float]:
                 return [float(x) for x in first["embedding"]]
         if isinstance(payload.get("embedding"), list):
             return [float(x) for x in payload["embedding"]]
-        if "embeddings" in payload and isinstance(payload["embeddings"], list) and payload["embeddings"]:
+        if (
+            "embeddings" in payload
+            and isinstance(payload["embeddings"], list)
+            and payload["embeddings"]
+        ):
             first = payload["embeddings"][0]
             if isinstance(first, list):
                 return [float(x) for x in first]
@@ -119,8 +130,14 @@ def test_embedding_model_endpoint_available_from_config() -> None:
     attempts = (
         (f"{embedding_endpoint}/embed", {"inputs": "health check text"}),
         (f"{embedding_endpoint}/embed", {"inputs": ["health check text"]}),
-        (f"{embedding_endpoint}/v1/embeddings", {"input": "health check text", "model": embedding_model}),
-        (f"{embedding_endpoint}/embeddings", {"input": "health check text", "model": embedding_model}),
+        (
+            f"{embedding_endpoint}/v1/embeddings",
+            {"input": "health check text", "model": embedding_model},
+        ),
+        (
+            f"{embedding_endpoint}/embeddings",
+            {"input": "health check text", "model": embedding_model},
+        ),
     )
 
     last_error: AssertionError | None = None

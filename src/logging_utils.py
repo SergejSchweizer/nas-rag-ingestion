@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Logging utilities for CLI scripts in this repository."""
+
+from __future__ import annotations
 
 import logging
 from logging.handlers import TimedRotatingFileHandler

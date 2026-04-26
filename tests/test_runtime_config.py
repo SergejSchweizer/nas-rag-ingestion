@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Tests for config loading and CLI override precedence resolution."""
+
+from __future__ import annotations
 
 from src.ingestion.runtime_config import resolve_index_runtime_config, resolve_parse_runtime_config
 

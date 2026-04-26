@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Local ingestion state tracking for idempotent parsing runs."""
+
+from __future__ import annotations
 
 import json
 from datetime import datetime, timezone

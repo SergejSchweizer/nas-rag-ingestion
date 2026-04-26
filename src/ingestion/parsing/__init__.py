@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """Public parsing API for ingestion."""
+
+from __future__ import annotations
 
 from .constants import DEFAULT_EXCLUDE_DIRS, DEFAULT_EXTENSIONS
 from .docling_adapter import DoclingAdapter

@@ -1,11 +1,11 @@
 # Core RAG pipeline
-llama-index==0.11.0
-llama-index-vector-stores-qdrant==0.3.0
-qdrant-client==1.9.0
+llama-index-core==0.14.21
+llama-index-vector-stores-qdrant==0.10.0
+qdrant-client==1.17.1
 
 # Local model integrations (CPU-only target; no GPU/CUDA deps)
-llama-index-llms-ollama==0.3.0
-llama-index-embeddings-ollama==0.3.0
+llama-index-llms-ollama==0.10.1
+llama-index-embeddings-ollama==0.9.0
 
 # Parsing and config
 docling==2.91.0
@@ -14,3 +14,5 @@ PyYAML==6.0.1
 
 # Testing
 pytest==8.0.0
+ruff==0.6.0
+mypy==1.11.2

@@ -17,7 +17,16 @@ def _sample_elements_with_bboxes() -> tuple[dict, ...]:
             "order": 1,
             "section_path": ["Intro"],
             "metadata": {
-                "bboxes": [{"page": 1, "l": 100, "t": 120, "r": 200, "b": 170, "origin": "coordorigin.bottomleft"}]
+                "bboxes": [
+                    {
+                        "page": 1,
+                        "l": 100,
+                        "t": 120,
+                        "r": 200,
+                        "b": 170,
+                        "origin": "coordorigin.bottomleft",
+                    }
+                ]
             },
         },
         {
@@ -28,7 +37,16 @@ def _sample_elements_with_bboxes() -> tuple[dict, ...]:
             "order": 2,
             "section_path": ["Results"],
             "metadata": {
-                "bboxes": [{"page": 2, "l": 0.2, "t": 0.2, "r": 0.5, "b": 0.35, "origin": "coordorigin.topleft"}]
+                "bboxes": [
+                    {
+                        "page": 2,
+                        "l": 0.2,
+                        "t": 0.2,
+                        "r": 0.5,
+                        "b": 0.35,
+                        "origin": "coordorigin.topleft",
+                    }
+                ]
             },
         },
     )

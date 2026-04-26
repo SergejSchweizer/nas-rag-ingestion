@@ -1,6 +1,6 @@
-from __future__ import annotations
-
 """PDF audit utilities to overlay red labeled frames at parsed chunk coordinates."""
+
+from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
@@ -78,17 +78,17 @@ def _frames_by_page(elements: tuple[dict[str, Any], ...]) -> dict[int, list[dict
             if not isinstance(bbox, dict):
                 continue
             page = _safe_int(bbox.get("page"), default=1)
-            l = _safe_float(bbox.get("l"))
+            left = _safe_float(bbox.get("l"))
             t = _safe_float(bbox.get("t"))
             r = _safe_float(bbox.get("r"))
             b = _safe_float(bbox.get("b"))
-            if None in {l, t, r, b}:
+            if None in {left, t, r, b}:
                 continue
             grouped.setdefault(page, []).append(
                 {
                     "element_index": element_index,
                     "element_type": element_type,
-                    "l": l,
+                    "l": left,
                     "t": t,
                     "r": r,
                     "b": b,
@@ -102,21 +102,21 @@ def _to_pdf_rect(frame: dict[str, Any], page: Any) -> tuple[float, float, float,
     """Convert stored bbox into PDF coordinate rect `(x0, y0, x1, y1)`."""
     page_width = float(page.mediabox.width)
     page_height = float(page.mediabox.height)
-    l = float(frame["l"])
+    left = float(frame["l"])
     t = float(frame["t"])
     r = float(frame["r"])
     b = float(frame["b"])
     origin = str(frame.get("origin", "unknown"))
 
     # Normalized coordinates.
-    if max(abs(l), abs(t), abs(r), abs(b)) <= 1.0:
-        l *= page_width
+    if max(abs(left), abs(t), abs(r), abs(b)) <= 1.0:
+        left *= page_width
         r *= page_width
         t *= page_height
         b *= page_height
 
-    x0 = min(l, r)
-    x1 = max(l, r)
+    x0 = min(left, r)
+    x1 = max(left, r)
 
     if "top" in origin:
         y0 = page_height - max(t, b)

@@ -1,18 +1,18 @@
-from __future__ import annotations
-
 """Index parsed corpus artifacts into Qdrant using LlamaIndex."""
 
-from dataclasses import dataclass
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
-from pathlib import Path
 import time
+import uuid
+import warnings
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
-import uuid
-import warnings
 
 from llama_index.core.base.embeddings.base import BaseEmbedding
 from pydantic import PrivateAttr
@@ -61,11 +61,15 @@ class LlamaIndexIndexer:
         self.recreate_collection = recreate_collection
         self.batch_size = max(1, batch_size)
 
-    def index_from_jsonl(self, input_jsonl: str | Path, state_file: str | Path | None = None) -> IndexingStats:
+    def index_from_jsonl(
+        self, input_jsonl: str | Path, state_file: str | Path | None = None
+    ) -> IndexingStats:
         """Load parsed JSONL, build LlamaIndex nodes, and upsert into Qdrant."""
         records = self._load_parsed_jsonl(input_jsonl)
         state_store = IndexingStateStore(state_file) if state_file else None
-        nodes, skipped_nodes, doc_snapshots, stale_point_ids = self._build_nodes(records, state_store=state_store)
+        nodes, skipped_nodes, doc_snapshots, stale_point_ids = self._build_nodes(
+            records, state_store=state_store
+        )
         if not nodes:
             deleted_nodes = self._delete_points(stale_point_ids) if stale_point_ids else 0
             if state_store:
@@ -187,7 +191,9 @@ class LlamaIndexIndexer:
                 node_kwargs: dict[str, Any] = {"text": text, "metadata": metadata, "id_": point_id}
                 nodes.append(TextNode(**node_kwargs))
             if state_store:
-                stale_point_ids.extend(sorted(set(previous_chunks.keys()) - set(current_chunks.keys())))
+                stale_point_ids.extend(
+                    sorted(set(previous_chunks.keys()) - set(current_chunks.keys()))
+                )
             doc_snapshots[doc_id] = current_chunks
         return nodes, skipped, doc_snapshots, stale_point_ids
 
@@ -200,10 +206,13 @@ class LlamaIndexIndexer:
                 from llama_index.embeddings.ollama import OllamaEmbedding
             except ImportError as exc:
                 raise ImportError(
-                    "Ollama embeddings provider requested but `llama-index-embeddings-ollama` is not installed."
+                    "Ollama embeddings provider requested but "
+                    "`llama-index-embeddings-ollama` is not installed."
                 ) from exc
             if not self.embedding_endpoint:
-                raise ValueError("`embedding_endpoint` is required when `embedding_provider` is `ollama`.")
+                raise ValueError(
+                    "`embedding_endpoint` is required when `embedding_provider` is `ollama`."
+                )
             return OllamaEmbedding(
                 model_name=self.embedding_model,
                 base_url=self.embedding_endpoint,
@@ -218,7 +227,8 @@ class LlamaIndexIndexer:
             )
 
         raise ValueError(
-            f"Unsupported embedding provider: {self.embedding_provider}. Supported values: `tei`, `ollama`."
+            f"Unsupported embedding provider: {self.embedding_provider}. "
+            "Supported values: `tei`, `ollama`."
         )
 
     def _build_vector_store(self) -> Any:
@@ -238,12 +248,16 @@ class LlamaIndexIndexer:
 
         if self.recreate_collection:
             LOGGER.warning("Recreating Qdrant collection: %s", self.qdrant_collection)
-            client.recreate_collection(collection_name=self.qdrant_collection, vectors_config=vectors_config)
+            client.recreate_collection(
+                collection_name=self.qdrant_collection, vectors_config=vectors_config
+            )
             return
 
         exists = self._collection_exists(client, self.qdrant_collection)
         if not exists:
-            client.create_collection(collection_name=self.qdrant_collection, vectors_config=vectors_config)
+            client.create_collection(
+                collection_name=self.qdrant_collection, vectors_config=vectors_config
+            )
 
     @staticmethod
     def _collection_exists(client: Any, collection_name: str) -> bool:
@@ -293,9 +307,10 @@ class LlamaIndexIndexer:
         from qdrant_client.http.models import PointIdsList
 
         client = self._build_qdrant_client()
+        typed_point_ids: list[str | int | uuid.UUID] = list(point_ids)
         client.delete(
             collection_name=self.qdrant_collection,
-            points_selector=PointIdsList(points=point_ids),
+            points_selector=PointIdsList(points=typed_point_ids),
             wait=True,
         )
         return len(point_ids)
@@ -387,7 +402,9 @@ class RemoteHTTPEmbedding(BaseEmbedding):
         if self._resolved_batch_strategy is not None:
             path, mode = self._resolved_batch_strategy
             try:
-                response = self._post_json(path=path, payload=self._build_payload(mode=mode, texts=texts))
+                response = self._post_json(
+                    path=path, payload=self._build_payload(mode=mode, texts=texts)
+                )
                 vectors = self._extract_embeddings(response)
                 if len(vectors) == len(texts):
                     return vectors
@@ -402,7 +419,9 @@ class RemoteHTTPEmbedding(BaseEmbedding):
         last_error: Exception | None = None
         for path, mode in attempts:
             try:
-                response = self._post_json(path=path, payload=self._build_payload(mode=mode, texts=texts))
+                response = self._post_json(
+                    path=path, payload=self._build_payload(mode=mode, texts=texts)
+                )
                 vectors = self._extract_embeddings(response)
                 if len(vectors) == len(texts):
                     self._resolved_batch_strategy = (path, mode)
@@ -430,7 +449,9 @@ class RemoteHTTPEmbedding(BaseEmbedding):
         if self._resolved_single_strategy is not None:
             path, mode = self._resolved_single_strategy
             try:
-                response = self._post_json(path=path, payload=self._build_payload(mode=mode, text=text))
+                response = self._post_json(
+                    path=path, payload=self._build_payload(mode=mode, text=text)
+                )
                 vectors = self._extract_embeddings(response)
                 if vectors:
                     return vectors[0]
@@ -448,7 +469,9 @@ class RemoteHTTPEmbedding(BaseEmbedding):
         last_error: Exception | None = None
         for path, mode in attempts:
             try:
-                response = self._post_json(path=path, payload=self._build_payload(mode=mode, text=text))
+                response = self._post_json(
+                    path=path, payload=self._build_payload(mode=mode, text=text)
+                )
                 vectors = self._extract_embeddings(response)
                 if vectors:
                     self._resolved_single_strategy = (path, mode)
@@ -514,7 +537,9 @@ class RemoteHTTPEmbedding(BaseEmbedding):
                 break
             except urllib_error.HTTPError as exc:
                 message = exc.read().decode("utf-8", errors="ignore")
-                raise RuntimeError(f"Embedding HTTP {exc.code} from {url}: {message[:500]}") from exc
+                raise RuntimeError(
+                    f"Embedding HTTP {exc.code} from {url}: {message[:500]}"
+                ) from exc
             except (urllib_error.URLError, TimeoutError, OSError) as exc:
                 last_error = exc
                 if attempt < self._max_retries:
@@ -540,7 +565,11 @@ class RemoteHTTPEmbedding(BaseEmbedding):
                     return vectors
             if isinstance(payload.get("embedding"), list):
                 return [[float(x) for x in payload["embedding"]]]
-            if "embeddings" in payload and isinstance(payload["embeddings"], list) and payload["embeddings"]:
+            if (
+                "embeddings" in payload
+                and isinstance(payload["embeddings"], list)
+                and payload["embeddings"]
+            ):
                 if isinstance(payload["embeddings"][0], list):
                     return [[float(x) for x in vec] for vec in payload["embeddings"]]
 

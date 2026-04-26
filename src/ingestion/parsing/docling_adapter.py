@@ -1,11 +1,11 @@
-from __future__ import annotations
-
 """Docling adapter for file conversion and low-level item extraction."""
+
+from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 import re
+from pathlib import Path
 from typing import Any
 
 LOGGER = logging.getLogger(__name__)
@@ -92,22 +92,29 @@ class DoclingAdapter:
             if bbox is None:
                 continue
 
-            l = self._coord_value(bbox, "l", "left", "x0", "x_min")
+            left = self._coord_value(bbox, "l", "left", "x0", "x_min")
             t = self._coord_value(bbox, "t", "top", "y0", "y_min")
             r = self._coord_value(bbox, "r", "right", "x1", "x_max")
             b = self._coord_value(bbox, "b", "bottom", "y1", "y_max")
-            if None in {l, t, r, b}:
+            if None in {left, t, r, b}:
                 continue
+            assert left is not None and t is not None and r is not None and b is not None
+            left_value = float(left)
+            top_value = float(t)
+            right_value = float(r)
+            bottom_value = float(b)
 
-            coord_origin = getattr(bbox, "coord_origin", None) or getattr(prov, "coord_origin", None)
+            coord_origin = getattr(bbox, "coord_origin", None) or getattr(
+                prov, "coord_origin", None
+            )
             origin_str = str(coord_origin).lower() if coord_origin is not None else "unknown"
             boxes.append(
                 {
                     "page": int(page_no) if isinstance(page_no, int) and page_no > 0 else 1,
-                    "l": float(l),
-                    "t": float(t),
-                    "r": float(r),
-                    "b": float(b),
+                    "l": left_value,
+                    "t": top_value,
+                    "r": right_value,
+                    "b": bottom_value,
                     "origin": origin_str,
                 }
             )
@@ -183,9 +190,24 @@ class DoclingAdapter:
     def _ensure_rapidocr_models(artifacts_path: Path) -> None:
         """Ensure RapidOCR artifacts exist under the configured Docling artifacts path."""
         required_paths = (
-            artifacts_path / "RapidOcr" / "torch" / "PP-OCRv4" / "det" / "ch_PP-OCRv4_det_mobile.pth",
-            artifacts_path / "RapidOcr" / "torch" / "PP-OCRv4" / "cls" / "ch_ptocr_mobile_v2.0_cls_mobile.pth",
-            artifacts_path / "RapidOcr" / "torch" / "PP-OCRv4" / "rec" / "ch_PP-OCRv4_rec_mobile.pth",
+            artifacts_path
+            / "RapidOcr"
+            / "torch"
+            / "PP-OCRv4"
+            / "det"
+            / "ch_PP-OCRv4_det_mobile.pth",
+            artifacts_path
+            / "RapidOcr"
+            / "torch"
+            / "PP-OCRv4"
+            / "cls"
+            / "ch_ptocr_mobile_v2.0_cls_mobile.pth",
+            artifacts_path
+            / "RapidOcr"
+            / "torch"
+            / "PP-OCRv4"
+            / "rec"
+            / "ch_PP-OCRv4_rec_mobile.pth",
             artifacts_path
             / "RapidOcr"
             / "paddle"

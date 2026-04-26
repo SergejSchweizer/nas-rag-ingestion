@@ -1,18 +1,18 @@
-from __future__ import annotations
-
 """Parsing orchestration for turning local files into ingestion-ready records.
 
 This module uses Docling as the primary parsing backend and only keeps lightweight
 normalization logic that is not provided directly by Docling.
 """
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from __future__ import annotations
+
 import hashlib
 import json
 import logging
-from pathlib import Path
 import re
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 from .constants import DEFAULT_EXCLUDE_DIRS, DEFAULT_EXTENSIONS
@@ -65,7 +65,9 @@ class CorpusParser:
         if docling_converter is not None and docling_adapter is not None:
             raise ValueError("Use only one of `docling_converter` or `docling_adapter`.")
         self.docling_adapter = docling_adapter or DoclingAdapter(converter=docling_converter)
-        self.semantic_extractor = semantic_extractor or SemanticExtractor(docling_adapter=self.docling_adapter)
+        self.semantic_extractor = semantic_extractor or SemanticExtractor(
+            docling_adapter=self.docling_adapter
+        )
         # Backwards-compatible attribute for integrations/tests that may inspect it.
         self.docling_converter = self.docling_adapter.converter
         self.last_run_stats = ParseRunStats(
@@ -208,7 +210,8 @@ class CorpusParser:
         output_path = Path(output_file)
         if keep_existing_if_empty and not parsed_docs and output_path.exists():
             LOGGER.info(
-                "Skipping JSONL overwrite because parse result is empty and keep_existing_if_empty=True. path=%s",
+                "Skipping JSONL overwrite because parse result is empty and "
+                "keep_existing_if_empty=True. path=%s",
                 output_path,
             )
             return
@@ -274,7 +277,9 @@ class CorpusParser:
         result = self.docling_adapter.convert(path)
         if not self.docling_adapter.is_successful_conversion(result.status):
             errors = [str(item) for item in (result.errors or [])]
-            raise ValueError(f"Docling conversion failed with status={result.status} errors={errors}")
+            raise ValueError(
+                f"Docling conversion failed with status={result.status} errors={errors}"
+            )
 
         doc = result.document
         elements = self.semantic_extractor.extract(doc_id=doc_id, doc=doc)
@@ -305,7 +310,9 @@ class CorpusParser:
             page_start = min(item.page for item in current_elements)
             page_end = max(item.page for item in current_elements)
             section_label = current_section[-1] if current_section else "front_matter"
-            parent_id = self._hash_id(doc_id, "parent", str(parent_index), ".".join(current_section))
+            parent_id = self._hash_id(
+                doc_id, "parent", str(parent_index), ".".join(current_section)
+            )
             parents.append(
                 ParentNode(
                     parent_id=parent_id,
@@ -394,10 +401,10 @@ class CorpusParser:
             if element.element_type not in {"table", "figure_caption"}:
                 continue
 
-            parent = self._parent_for_section(parent_nodes, element.section_path)
-            if parent is None and parent_nodes:
-                parent = parent_nodes[0]
-            if parent is None:
+            selected_parent = self._parent_for_section(parent_nodes, element.section_path)
+            if selected_parent is None and parent_nodes:
+                selected_parent = parent_nodes[0]
+            if selected_parent is None:
                 continue
 
             chunk_type = "table" if element.element_type == "table" else "figure"
@@ -411,11 +418,11 @@ class CorpusParser:
                 chunk_text = f"{element.text}\n{context}".strip()
                 extra_metadata = {"figure_context": context}
 
-            child_id = self._hash_id(parent.parent_id, chunk_type, element.element_id)
+            child_id = self._hash_id(selected_parent.parent_id, chunk_type, element.element_id)
             children.append(
                 ChildNode(
                     child_id=child_id,
-                    parent_id=parent.parent_id,
+                    parent_id=selected_parent.parent_id,
                     doc_id=doc_id,
                     chunk_level="child",
                     chunk_type=chunk_type,
@@ -428,7 +435,9 @@ class CorpusParser:
                         "paper_title": paper_title,
                         "authors": authors,
                         "year": year,
-                        "section": element.section_path[-1] if element.section_path else "front_matter",
+                        "section": element.section_path[-1]
+                        if element.section_path
+                        else "front_matter",
                         "page_start": element.page,
                         "page_end": element.page,
                         "chunk_level": "child",
