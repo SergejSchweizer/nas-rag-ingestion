@@ -9,12 +9,12 @@ from pathlib import Path
 
 def configure_weekly_logging(
     log_dir: str | Path = "/volume1/Temp/logs",
-    log_file_name: str = "nas-rag-ingestion.log",
+    log_file_name: str = "structured-nas-ingestions.log",
     level: str = "INFO",
 ) -> Path:
     """Configure root logging with weekly file rotation and console output.
 
-    - Log file path defaults to `/volume1/Temp/logs/nas-rag-ingestion.log`
+    - Log file path defaults to `/volume1/Temp/logs/structured-nas-ingestions.log`
     - Weekly rollover happens every Monday at midnight UTC
     - `backupCount=0` keeps all historical log files
     """

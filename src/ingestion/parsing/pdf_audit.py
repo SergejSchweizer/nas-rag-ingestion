@@ -1,4 +1,4 @@
-"""PDF audit utilities to overlay red labeled frames at parsed chunk coordinates."""
+"""PDF audit utilities to overlay hierarchy-colored chunk annotations on PDFs."""
 
 from __future__ import annotations
 
@@ -8,6 +8,38 @@ from typing import Any
 from pypdf import PdfReader, PdfWriter
 from pypdf.annotations import FreeText
 
+_HIERARCHY_ORDER: tuple[str, ...] = (
+    "title",
+    "section_heading",
+    "paragraph",
+    "table",
+    "figure_caption",
+    "equation",
+    "references",
+)
+
+_TYPE_COLOR_HEX: dict[str, str] = {
+    "title": "b51f1f",
+    "section_heading": "c77800",
+    "paragraph": "166534",
+    "table": "1d4ed8",
+    "figure_caption": "7c3aed",
+    "equation": "0f766e",
+    "references": "6b7280",
+    "chunk": "dc2626",
+}
+
+_TYPE_FILL_HEX: dict[str, str] = {
+    "title": "fde8e8",
+    "section_heading": "fff4e5",
+    "paragraph": "e8f6ec",
+    "table": "e8f0ff",
+    "figure_caption": "f2e8ff",
+    "equation": "e6f9f7",
+    "references": "f3f4f6",
+    "chunk": "fee2e2",
+}
+
 
 def annotate_pdf_with_chunks(
     source_pdf: str | Path,
@@ -16,7 +48,7 @@ def annotate_pdf_with_chunks(
     relative_path: str,
     elements: tuple[dict[str, Any], ...],
 ) -> None:
-    """Write annotated PDF with red labeled frames around chunk bounding boxes."""
+    """Write annotated PDF with hierarchy-colored chunk frames and per-page legend."""
 
     src = Path(source_pdf)
     if not src.exists():
@@ -30,7 +62,9 @@ def annotate_pdf_with_chunks(
     writer = PdfWriter()
     writer.add_outline_item(title=f"Parser Audit: {relative_path}", page_number=0, bold=True)
 
+    dependencies = _chunk_dependencies(elements=elements)
     frames_by_page = _frames_by_page(elements=elements)
+    legend_items = _legend_items(frames_by_page)
     if not any(frames_by_page.values()):
         raise ValueError(
             "No bounding boxes found in parsed elements metadata. "
@@ -43,7 +77,10 @@ def annotate_pdf_with_chunks(
         page_frames = frames_by_page.get(page_number, [])
         for index, frame in enumerate(page_frames, start=1):
             rect = _to_pdf_rect(frame=frame, page=page)
-            label = _frame_label(frame=frame, index=index)
+            color = _color_for_type(str(frame.get("element_type", "chunk")))
+            fill_color = _fill_for_type(str(frame.get("element_type", "chunk")))
+            dependency = dependencies.get(int(frame.get("element_index", index)))
+            label = _frame_label(frame=frame, index=index, dependency=dependency)
             writer.add_annotation(
                 page_number=page_index,
                 annotation=FreeText(
@@ -51,11 +88,17 @@ def annotate_pdf_with_chunks(
                     rect=rect,
                     font="Courier",
                     font_size="6pt",
-                    font_color="ff0000",
-                    border_color="ff0000",
-                    background_color=None,
+                    font_color=color,
+                    border_color=color,
+                    background_color=fill_color,
                 ),
             )
+        _add_legend_annotations(
+            writer=writer,
+            page_index=page_index,
+            page=page,
+            legend_items=legend_items,
+        )
 
     with dst.open("wb") as handle:
         writer.write(handle)
@@ -87,6 +130,7 @@ def _frames_by_page(elements: tuple[dict[str, Any], ...]) -> dict[int, list[dict
             grouped.setdefault(page, []).append(
                 {
                     "element_index": element_index,
+                    "element_id": str(element.get("element_id", "")),
                     "element_type": element_type,
                     "l": left,
                     "t": t,
@@ -96,6 +140,97 @@ def _frames_by_page(elements: tuple[dict[str, Any], ...]) -> dict[int, list[dict
                 }
             )
     return grouped
+
+
+def _chunk_dependencies(
+    elements: tuple[dict[str, Any], ...],
+) -> dict[int, tuple[int | None, int | None]]:
+    """Build simple previous/next dependencies across bbox-backed text chunks."""
+    chunk_indexes: list[int] = []
+    for element_index, element in enumerate(elements, start=1):
+        if not isinstance(element, dict):
+            continue
+        metadata = element.get("metadata", {})
+        if not isinstance(metadata, dict):
+            continue
+        bboxes = metadata.get("bboxes", [])
+        if not isinstance(bboxes, list):
+            continue
+        if any(isinstance(bbox, dict) for bbox in bboxes):
+            chunk_indexes.append(element_index)
+
+    dependencies: dict[int, tuple[int | None, int | None]] = {}
+    for idx, element_index in enumerate(chunk_indexes):
+        prev_index = chunk_indexes[idx - 1] if idx > 0 else None
+        next_index = chunk_indexes[idx + 1] if idx + 1 < len(chunk_indexes) else None
+        dependencies[element_index] = (prev_index, next_index)
+    return dependencies
+
+
+def _legend_items(frames_by_page: dict[int, list[dict[str, Any]]]) -> tuple[tuple[str, str], ...]:
+    """Build sorted legend entries from observed element types across document pages."""
+    seen_types: set[str] = set()
+    for frames in frames_by_page.values():
+        for frame in frames:
+            seen_types.add(str(frame.get("element_type", "chunk")))
+
+    ordered = sorted(seen_types, key=lambda item: (_hierarchy_rank(item), item))
+    return tuple((item, _color_for_type(item)) for item in ordered)
+
+
+def _add_legend_annotations(
+    *,
+    writer: PdfWriter,
+    page_index: int,
+    page: Any,
+    legend_items: tuple[tuple[str, str], ...],
+) -> None:
+    """Add top-right legend that describes color and hierarchy for labels."""
+    if not legend_items:
+        return
+
+    page_width = float(page.mediabox.width)
+    page_height = float(page.mediabox.height)
+    margin = 12.0
+    box_width = min(260.0, max(170.0, page_width * 0.32))
+    row_height = 12.0
+    title_height = 14.0
+
+    x1 = page_width - margin
+    x0 = max(margin, x1 - box_width)
+    y_top = page_height - margin
+
+    title_rect = (x0, y_top - title_height, x1, y_top)
+    writer.add_annotation(
+        page_number=page_index,
+        annotation=FreeText(
+            text="Label Colors (Hierarchy)",
+            rect=title_rect,
+            font="Courier",
+            font_size="8pt",
+            font_color="111827",
+            border_color="111827",
+            background_color="ffffff",
+        ),
+    )
+
+    for idx, (element_type, color) in enumerate(legend_items, start=1):
+        y1 = y_top - title_height - ((idx - 1) * row_height) - 2
+        y0 = y1 - row_height + 2
+        rank = _hierarchy_rank(element_type)
+        label = f"H{rank:02d} {element_type}"
+        writer.add_annotation(
+            page_number=page_index,
+            annotation=FreeText(
+                text=label,
+                rect=(x0, y0, x1, y1),
+                font="Courier",
+                font_size="7pt",
+                font_color=color,
+                border_color=color,
+                background_color="ffffff",
+            ),
+        )
 
 
 def _to_pdf_rect(frame: dict[str, Any], page: Any) -> tuple[float, float, float, float]:
@@ -137,11 +272,41 @@ def _to_pdf_rect(frame: dict[str, Any], page: Any) -> tuple[float, float, float,
     return (x0, y0, x1, y1)
 
 
-def _frame_label(frame: dict[str, Any], index: int) -> str:
-    """Build short red-frame label text."""
+def _frame_label(
+    frame: dict[str, Any],
+    index: int,
+    dependency: tuple[int | None, int | None] | None,
+) -> str:
+    """Build short colored frame label text with hierarchy and dependencies."""
     element_type = str(frame.get("element_type", "chunk"))
     element_index = int(frame.get("element_index", index))
-    return f"C{element_index:03d}:{element_type}"
+    rank = _hierarchy_rank(element_type)
+    prev_label = "none"
+    next_label = "none"
+    if dependency is not None:
+        prev_index, next_index = dependency
+        if prev_index is not None:
+            prev_label = f"C{prev_index:03d}"
+        if next_index is not None:
+            next_label = f"C{next_index:03d}"
+    return f"H{rank:02d} C{element_index:03d}:{element_type} prev={prev_label} next={next_label}"
+
+
+def _hierarchy_rank(element_type: str) -> int:
+    """Return 1-based hierarchy rank for an element type."""
+    if element_type in _HIERARCHY_ORDER:
+        return _HIERARCHY_ORDER.index(element_type) + 1
+    return len(_HIERARCHY_ORDER) + 1
+
+
+def _color_for_type(element_type: str) -> str:
+    """Return border/font color for an element type."""
+    return _TYPE_COLOR_HEX.get(element_type, _TYPE_COLOR_HEX["chunk"])
+
+
+def _fill_for_type(element_type: str) -> str:
+    """Return light fill color for an element type."""
+    return _TYPE_FILL_HEX.get(element_type, _TYPE_FILL_HEX["chunk"])
 
 
 def _safe_int(value: Any, *, default: int) -> int:

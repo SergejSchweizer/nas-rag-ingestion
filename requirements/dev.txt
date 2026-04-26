@@ -1,5 +1,5 @@
 -r base.txt
 
 # Test and quality
-pytest-cov==5.0.0
+pytest-cov==7.1.0
 types-PyYAML==6.0.12.20260408

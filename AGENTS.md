@@ -1,635 +1,245 @@
-# agent.md
+# AGENT.md
 
-# Engineering Operating Principles for AI Coding Agents
+## Purpose
 
-This document defines mandatory engineering standards for all code generation, refactoring, architecture decisions, documentation updates, and testing activities performed by AI coding agents.
+This document defines the operational rules for AI coding agents contributing to this repository.
 
-The goal is to ensure that generated systems remain:
+The agent must behave like a senior software engineer working in a production environment.
 
-- scalable
-- maintainable
-- modular
-- testable
-- observable
-- production-ready
-- transferable to future engineers
+Goals:
 
-This applies to:
-
-- RAG systems
-- multi-agent systems
-- ML pipelines
-- document ingestion systems
-- APIs
-- backend services
-- research prototypes transitioning into production systems
+- Maintain clean architecture
+- Preserve system stability
+- Prevent regressions
+- Ensure full documentation
+- Maintain test coverage
+- Avoid security risks
+- Keep repository understandable for future developers
 
 ---
 
-# 1. Security Rules
+# 1. Core Principles
+
+## 1.1 Never break working functionality
+
+Before modifying existing logic:
+
+- understand full execution flow
+- inspect dependencies
+- identify downstream consumers
+- preserve backward compatibility unless explicitly instructed otherwise
+
+If unsure:
+
+- ask for clarification
+- do not make destructive assumptions
+
+## 1.2 Always prefer maintainability over shortcuts
+
+Avoid:
+
+- quick hacks
+- hidden side effects
+- duplicated logic
+- oversized files
+- tightly coupled components
+
+Prefer:
+
+- abstraction
+- composition
+- interfaces
+- reusable components
+- testability
+
+## 1.3 Production-ready code only
+
+Every code contribution must be:
+
+- typed
+- documented
+- testable
+- modular
+- observable
+- deterministic where possible
+
+---
+
+# 2. Security Rules
 
 ## Never expose secrets
 
-Never:
+The agent must NEVER:
 
-- print secrets
-- log secrets
-- commit secrets
+- print API keys
+- print tokens
+- print credentials
 - hardcode secrets
-
-Secrets include:
-
-- API keys
-- database credentials
-- JWT secrets
-- OAuth credentials
-- cloud credentials
-- private certificates
-- internal infrastructure endpoints
-- `.env` values
+- expose `.env` contents
+- log sensitive credentials
 
 Use:
 
-- `.env`
 - environment variables
 - secret managers
-- vault systems
+- configuration abstraction
 
 ---
 
-## Git hygiene
-
-Ensure:
-
-- `.gitignore` exists
-- sensitive files are excluded
-- temporary artifacts are excluded
-- local environment files are excluded
-
-Examples:
+# 3. Required Project Structure
 
 ```bash
-.env
-.venv/
-__pycache__/
-*.pem
-*.key
-.ipynb_checkpoints/
+project/
+├── ingestion/
+├── retrieval/
+├── api/
+├── orchestration/
+├── core/
+├── state/
+├── tests/
+├── scripts/
+├── docs/
+└── README.md
 ```
 
 ---
 
-## Secret scanning
+# 4. Testing Requirements
 
-All repositories must include secret detection:
-
-- detect-secrets
-- gitleaks
-- equivalent tooling
-
----
-
-# 2. Project Architecture
-
-All projects must be modular.
-
-Never build monolithic applications.
-
-Required architecture:
-
-```bash
-project-root/
-│
-├── api/                  # API interfaces
-├── ingestion/            # parsing, ETL, chunking
-├── retrieval/            # search, embeddings, reranking
-├── orchestration/        # workflows, agents, graph execution
-├── domain/               # business logic
-├── infrastructure/       # databases, providers, adapters
-├── state/                # workflow state definitions
-├── configs/              # configs
-├── scripts/              # utility scripts
-├── docs/                 # architecture docs
-├── tests/                # test suites
-├── README.md
-└── pyproject.toml
-```
-
----
-
-# 3. Module Design Rules
-
-Every module must have:
-
-- clear responsibility
-- explicit ownership
-- minimal coupling
-- strong cohesion
-
-Example:
-
-```bash
-retrieval/
-├── interfaces.py
-├── services.py
-├── providers/
-├── models.py
-├── exceptions.py
-├── config.py
-└── tests/
-```
-
----
-
-# 4. Clear Interfaces
-
-Every major component must expose explicit interfaces.
-
-Use:
-
-- abstract base classes
-- protocols
-- service interfaces
-- repositories
-
-Example:
-
-```python
-from abc import ABC, abstractmethod
-
-class EmbeddingProvider(ABC):
-
-    @abstractmethod
-    def embed(self, text: str) -> list[float]:
-        pass
-```
-
-This allows swapping:
-
-- OpenAI embeddings
-- HuggingFace embeddings
-- TEI embeddings
-- local models
-- future providers
-
-without changing business logic.
-
----
-
-# 5. Required Python Design Patterns
-
-Use proper design patterns when applicable.
-
----
-
-## Strategy Pattern
-
-For interchangeable algorithms:
-
-- chunking
-- embeddings
-- reranking
-- retrieval
-
----
-
-## Factory Pattern
-
-For dynamic object creation:
-
-- model loaders
-- parser creation
-- provider selection
-
----
-
-## Adapter Pattern
-
-For external systems:
-
-- OpenAI
-- Qdrant
-- Elasticsearch
-- APIs
-
----
-
-## Repository Pattern
-
-For storage abstraction:
-
-- documents
-- metadata
-- vector storage
-
----
-
-## Builder Pattern
-
-For complex pipelines:
-
-- ingestion pipelines
-- RAG workflows
-
----
-
-## Observer Pattern
-
-For:
-
-- event tracking
-- monitoring
-- metrics
-- logging
-
----
-
-## Dependency Injection
-
-Required for:
-
-- testing
-- modularity
-- maintainability
-
-Avoid tightly coupled services.
-
----
-
-# 6. State Management
-
-Complex workflows must explicitly define state.
-
-Examples:
-
-- LangGraph workflows
-- agent workflows
-- ingestion pipelines
-- long-running jobs
-
-Required structure:
-
-```bash
-state/
-├── models.py
-├── persistence.py
-├── transitions.py
-```
-
-Example:
-
-```python
-class RetrievalState(TypedDict):
-    query: str
-    retrieved_docs: list
-    reranked_docs: list
-    final_response: str
-```
-
-State transitions must be:
-
-- deterministic
-- documented
-- testable
-- observable
-
----
-
-# 7. Code Quality Standards
-
-All code must include:
-
-- type hints
-- docstrings
-- proper exception handling
-- structured logging
-
-Code must be:
-
-- modular
-- readable
-- reusable
-- maintainable
-
----
-
-## Required tooling
-
-### Ruff
-
-```bash
-ruff check .
-ruff format .
-```
-
----
-
-## MyPy
-
-```bash
-mypy .
-```
-
----
-
-## Pytest
+After EVERY change run:
 
 ```bash
 pytest
 ```
 
----
-
-# 8. Testing Requirements
-
-Every feature must be tested.
-
-Required test categories:
+Required:
 
 - unit tests
 - integration tests
-- regression tests
-- edge case tests
+- e2e tests
+- regression tests for bug fixes
 
 ---
 
-## Critical workflows that always require tests
-
-- ingestion pipelines
-- retrieval pipelines
-- reranking
-- API endpoints
-- workflow orchestration
-- state transitions
-
----
-
-## Test organization
+# 5. Code Quality
 
 ```bash
-tests/
-├── unit/
-├── integration/
-├── regression/
-└── fixtures/
+ruff check .
+ruff format .
+mypy .
+```
+
+Mandatory for all commits.
+
+---
+
+# 6. Documentation
+
+README.md must function as a full wiki:
+
+- architecture
+- setup
+- workflows
+- deployment
+- troubleshooting
+- scaling
+
+Use nested sections and ASCII diagrams.
+
+Example:
+
+```text
+User → API → Retrieval → Reranker → LLM
 ```
 
 ---
 
-# 9. Pre-Commit Hooks
+# 7. Design Patterns
 
-Every repository must include pre-commit hooks.
+Use where appropriate:
 
-Required checks:
+- Strategy
+- Factory
+- Adapter
+- Repository
+- Dependency Injection
+
+---
+
+# 8. State Management
+
+State must be explicit.
+
+Examples:
+
+- checkpoints
+- workflow state
+- cache
+- session state
+
+Never hide state in globals.
+
+---
+
+# 9. Pre-commit Hooks
+
+Every repo must include pre-commit hooks for:
 
 - pytest
 - ruff
 - mypy
-- secret scanning
-
-Example:
-
-```yaml
-repos:
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: pytest
-        language: system
-        pass_filenames: false
-
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.0
-    hooks:
-      - id: rff
-      - id: ruff-format
-
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.10.0
-    hooks:
-      - id: mypy
-
-  - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.5.0
-    hooks:
-      - id: detect-secrets
-```
 
 ---
 
-# 10. README Requirements
+# 10. RAG / Agent Systems
 
-README must be treated as a long-term wiki.
+Validate:
 
-It must remain sufficiently structured and precise to onboard future engineers.
+- parsing quality
+- chunking quality
+- retrieval metrics
+- hallucination rate
+- latency
+- fallback behavior
 
-README must explain:
+Metrics:
 
-- business problem
-- architecture
-- design decisions
-- module boundaries
-- interfaces
-- state flows
-- deployment
-- testing
-- troubleshooting
-- roadmap
-
----
-
-# 11. Required README Structure
-
-```md
-# Project Name
-
-## 1. Business Problem
-### 1.1 Context
-### 1.2 Requirements
-
-## 2. Architecture
-### 2.1 System Overview
-### 2.2 Module Responsibilities
-### 2.3 Interfaces
-### 2.4 State Management
-
-## 3. Ingestion Flow
-
-## 4. Retrieval Flow
-
-## 5. API Layer
-
-## 6. Deployment
-
-## 7. Testing Strategy
-
-## 8. Monitoring
-
-## 9. Troubleshooting
-
-## 10. Future Improvements
-```
+- recall@k
+- precision@k
+- p95 latency
+- token cost
 
 ---
 
-# 12. Architecture Documentation
+# 11. Failure Handling
 
-Complex relationships must be documented using ASCII diagrams.
+Define:
 
----
-
-## Example system diagram
-
-```text
-                User
-                 |
-                 v
-          API Gateway
-                 |
-                 v
-       Orchestration Layer
-         /             \
-        v               v
- Retrieval Layer   Ingestion Layer
-        |               |
-        v               v
- Vector DB         Object Storage
-        |
-        v
-      LLM
-```
+- retries
+- timeouts
+- fallbacks
+- recovery strategy
 
 ---
 
-## Example state diagram
-
-```text
-RAW_DOCUMENT
-    |
-PARSED
-    |
-CHUNKED
-    |
-EMBEDDED
-    |
-INDEXED
-```
-
----
-
-# 13. Observability
-
-Systems should support:
-
-- structured logging
-- metrics
-- tracing
-- monitoring
-- alerting
-
-Recommended tools:
-
-- Prometheus
-- Grafana
-- OpenTelemetry
-- Sentry
-
----
-
-# 14. Configuration Management
-
-Never hardcode config values.
-
-Use:
-
-- config classes
-- YAML
-- TOML
-- environment variables
-
-Example:
-
-```python
-class Settings(BaseSettings):
-    api_key: str
-    db_url: str
-```
-
----
-
-# 15. CI/CD Requirements
-
-Projects should support CI pipelines.
-
-Minimum checks:
-
-- tests
-- linting
-- static typing
-- security scanning
-
-Example pipeline:
-
-```text
-commit
-  ↓
-pre-commit
-  ↓
-CI tests
-  ↓
-build
-  ↓
-deploy
-```
-
----
-
-# 16. Documentation Discipline
-
-Whenever functionality changes:
-
-- update README
-- update diagrams
-- update tests
-- update interfaces
-- update configs
-
-Documentation must evolve with code.
-
----
-
-# 17. Forbidden Practices
+# 12. Forbidden Behavior
 
 Never:
 
-- create giant scripts
-- mix business logic with infrastructure code
-- skip tests
-- skip linting
-- skip typing
-- leave outdated docs
-- hardcode secrets
-- deploy untested code
+- bypass tests
+- ignore linting
+- expose secrets
+- rewrite architecture impulsively
+- leave undocumented complexity
 
 ---
 
-# 18. Definition of Done
+# 13. Definition of Done
 
-A task is complete only when:
+Work is complete only when:
 
-- implementation works
 - tests pass
-- ruff passes
-- mypy passes
-- documentation updated
-- README updated
-- architecture updated
-- interfaces documented
-- state documented
-- pre-commit passes
-- no secrets exposed
-
-If any of these are missing:
-
-the task is NOT complete.
+- docs updated
+- architecture remains clean
+- feature works
+- maintainability improves

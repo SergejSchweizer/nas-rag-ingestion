@@ -30,7 +30,7 @@ def build_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="/volume1/Temp",
+        default="/volume1/Temp/logs/",
         help="Directory where annotated PDFs are written.",
     )
     parser.add_argument(
@@ -48,7 +48,7 @@ def build_args() -> argparse.Namespace:
 
 
 def load_pdf_rows(parsed_jsonl: str | Path) -> list[dict[str, Any]]:
-    """Load parsed JSONL rows and keep only PDF-backed records."""
+    """Load parsed JSONL rows and keep only PDF-backed records with bbox chunk metadata."""
     path = Path(parsed_jsonl)
     if not path.exists():
         raise FileNotFoundError(f"Parsed JSONL not found: {path}")
@@ -73,6 +73,8 @@ def load_pdf_rows(parsed_jsonl: str | Path) -> list[dict[str, Any]]:
             source_path = Path(str(metadata.get("source_path", "")))
             if not source_path.exists():
                 continue
+            if not _has_bbox_chunks(row):
+                continue
             rows.append(row)
     return rows
 
@@ -82,6 +84,25 @@ def output_path(output_dir: str | Path, ordinal: int) -> Path:
     if ordinal <= 0:
         raise ValueError("ordinal must be greater than 0.")
     return Path(output_dir) / f"{ordinal}.pdf"
+
+
+def _has_bbox_chunks(row: dict[str, Any]) -> bool:
+    """Return true when at least one element includes usable bbox metadata."""
+    elements = row.get("elements", [])
+    if not isinstance(elements, list):
+        return False
+    for element in elements:
+        if not isinstance(element, dict):
+            continue
+        metadata = element.get("metadata", {})
+        if not isinstance(metadata, dict):
+            continue
+        bboxes = metadata.get("bboxes", [])
+        if not isinstance(bboxes, list):
+            continue
+        if any(isinstance(bbox, dict) for bbox in bboxes):
+            return True
+    return False
 
 
 def main() -> None:
@@ -100,13 +121,16 @@ def main() -> None:
         )
 
     rng = random.Random(args.seed)
-    selected_rows = rng.sample(rows, args.count)
+    shuffled_rows = list(rows)
+    rng.shuffle(shuffled_rows)
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     generated = 0
-    for ordinal, row in enumerate(selected_rows, start=1):
+    for row in shuffled_rows:
+        if generated >= args.count:
+            break
         metadata = row.get("metadata", {}) if isinstance(row.get("metadata"), dict) else {}
         source_pdf = Path(str(metadata.get("source_path", "")))
         relative_path = str(metadata.get("relative_path", ""))
@@ -115,19 +139,32 @@ def main() -> None:
         if not source_pdf.exists():
             continue
 
-        target = output_path(out_dir, ordinal)
+        target = output_path(out_dir, generated + 1)
         if target.exists() and not args.overwrite:
-            print(f"SKIP (exists): {target}")
+            raise SystemExit(
+                f"Target file already exists: {target}. "
+                "Use --overwrite to regenerate deterministic outputs 1..n."
+            )
+
+        try:
+            annotate_pdf_with_chunks(
+                source_pdf=source_pdf,
+                output_pdf=target,
+                relative_path=relative_path,
+                elements=elements,
+            )
+        except ValueError as exc:
+            print(f"SKIP ({relative_path}): {exc}")
             continue
 
-        annotate_pdf_with_chunks(
-            source_pdf=source_pdf,
-            output_pdf=target,
-            relative_path=relative_path,
-            elements=elements,
-        )
         generated += 1
         print(f"OK: {target}")
+
+    if generated < args.count:
+        raise SystemExit(
+            f"Generated {generated} PDFs, but --count={args.count}. "
+            "Ensure parsed JSONL contains enough PDF rows with bbox chunk metadata."
+        )
 
     print(f"Generated: {generated}")
     print(f"Requested: {args.count}")

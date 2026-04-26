@@ -3,13 +3,13 @@ requires = ["setuptools>=68.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nas-rag-ingestion"
+name = "structured-nas-ingestions"
 version = "0.1.0"
 description = "CPU-only local RAG ingestion pipeline with LlamaIndex, Qdrant, and OpenWebUI."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
-authors = [{ name = "nas-rag-ingestion contributors" }]
+authors = [{ name = "structured-nas-ingestions contributors" }]
 
 [tool.setuptools.packages.find]
 where = ["."]

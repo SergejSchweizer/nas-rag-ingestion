@@ -75,6 +75,16 @@ def test_annotate_pdf_with_chunks_creates_red_frame_annotations(tmp_path: Path) 
     assert annots_page_1 is not None
     assert annots_page_2 is not None
 
+    page_1_texts = [str(item.get_object().get("/Contents", "")) for item in annots_page_1]
+    page_2_texts = [str(item.get_object().get("/Contents", "")) for item in annots_page_2]
+
+    assert any("Label Colors (Hierarchy)" in text for text in page_1_texts)
+    assert any("Label Colors (Hierarchy)" in text for text in page_2_texts)
+    assert any("H03 C001:paragraph" in text for text in page_1_texts)
+    assert any("prev=none" in text and "next=C002" in text for text in page_1_texts)
+    assert any("H04 C002:table" in text for text in page_2_texts)
+    assert any("prev=C001" in text and "next=none" in text for text in page_2_texts)
+
 
 def test_annotate_pdf_with_chunks_requires_bbox_data(tmp_path: Path) -> None:
     source_pdf = tmp_path / "sample.pdf"

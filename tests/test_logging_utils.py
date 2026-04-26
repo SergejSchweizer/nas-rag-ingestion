@@ -13,7 +13,7 @@ def test_configure_weekly_logging_creates_weekly_rotating_handler(tmp_path: Path
     """Logging setup should create weekly rotating handler and preserve backups."""
     log_file = configure_weekly_logging(log_dir=tmp_path, level="INFO")
 
-    assert log_file == tmp_path / "nas-rag-ingestion.log"
+    assert log_file == tmp_path / "structured-nas-ingestions.log"
 
     root = logging.getLogger()
     rotating_handlers = [h for h in root.handlers if isinstance(h, TimedRotatingFileHandler)]

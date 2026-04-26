@@ -22,7 +22,6 @@ class SemanticExtractor:
         types = self.docling_adapter.item_types()
         SectionHeaderItem = types["SectionHeaderItem"]
         TitleItem = types["TitleItem"]
-        TextItem = types["TextItem"]
         FormulaItem = types["FormulaItem"]
         TableItem = types["TableItem"]
         PictureItem = types["PictureItem"]
@@ -54,14 +53,11 @@ class SemanticExtractor:
                 metadata["rows"] = self.docling_adapter.table_rows(item=item, doc=doc)
             elif isinstance(item, PictureItem):
                 element_type = "figure_caption"
-            elif isinstance(item, TextItem):
-                element_type, metadata = self._classify_text_block(
-                    text=text, in_references=in_references
-                )
             else:
-                element_type, metadata = self._classify_text_block(
+                element_type, extra_metadata = self._classify_text_block(
                     text=text, in_references=in_references
                 )
+                metadata.update(extra_metadata)
 
             order += 1
             elements.append(

@@ -1,6 +1,6 @@
-# NAS RAG Ingestion
+# Structured NAS Ingestions
 
-NAS RAG Ingestion is a CPU-first document ingestion pipeline for local RAG workloads.
+Structured NAS Ingestions is a CPU-first document ingestion pipeline for local RAG workloads.
 
 The implemented scope today is parsing, semantic structuring, stateful incremental ingestion, and stateful incremental indexing into Qdrant. Retrieval and API-serving layers are tracked as planned work.
 
@@ -126,7 +126,7 @@ The architecture is split into an implemented ingestion/indexing path and a plan
                         (Implemented Indexing)
                                             |
 +-------------------+      +----------------+----------------+
-| Source Documents  |----->|  NAS RAG Ingestion (Current)   |
+| Source Documents  |----->|  Structured NAS Ingestions (Current)   |
 | .pdf .md .txt     |      |  - discover/parse/chunk/export |
 +-------------------+      |  - stateful skip-unchanged     |
                            +----------------+----------------+
