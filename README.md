@@ -1,23 +1,28 @@
 # NAS RAG Ingestion
 
-CPU-first ingestion pipeline for local RAG workloads.  
-Current implementation focus: **document parsing, semantic structuring, incremental indexing, and export artifacts** for downstream retrieval.
+NAS RAG Ingestion is a CPU-first document ingestion pipeline for local RAG workloads.
 
-## Contents
+The implemented scope today is parsing, semantic structuring, stateful incremental ingestion, and stateful incremental indexing into Qdrant. Retrieval and API-serving layers are tracked as planned work.
+
+## Table of Contents
 - [Project Status](#project-status)
   - [Implemented](#implemented)
   - [In Progress / Planned](#in-progress--planned)
-- [Architecture](#architecture)
-  - [Current (implemented)](#current-implemented)
-  - [Target (planned)](#target-planned)
-  - [System Relationship Map](#system-relationship-map)
+- [System Architecture](#system-architecture)
+  - [Current Flow (Implemented)](#current-flow-implemented)
+  - [Target Flow (Planned)](#target-flow-planned)
+  - [End-to-End Relationship Map](#end-to-end-relationship-map)
+  - [Ingestion and Indexing Lifecycle](#ingestion-and-indexing-lifecycle)
 - [Repository Layout](#repository-layout)
+- [Runtime and Dependency Model](#runtime-and-dependency-model)
+  - [Python Version](#python-version)
+  - [Requirements Structure](#requirements-structure)
 - [Quick Start](#quick-start)
-  - [1. Create environment](#1-create-environment)
-  - [2. Create local runtime config](#2-create-local-runtime-config)
-  - [3. Run parser](#3-run-parser)
-  - [4. Run sample-limited parse](#4-run-sample-limited-parse)
-  - [5. Index parsed chunks into Qdrant with LlamaIndex](#5-index-parsed-chunks-into-qdrant-with-llamaindex)
+  - [1. Create Environment](#1-create-environment)
+  - [2. Create Local Runtime Config](#2-create-local-runtime-config)
+  - [3. Run Parser](#3-run-parser)
+  - [4. Run Sample-Limited Parse](#4-run-sample-limited-parse)
+  - [5. Index Parsed Chunks into Qdrant](#5-index-parsed-chunks-into-qdrant)
 - [Configuration Reference](#configuration-reference)
   - [`paths`](#paths)
   - [`parsing`](#parsing)
@@ -25,74 +30,82 @@ Current implementation focus: **document parsing, semantic structuring, incremen
   - [`qdrant`](#qdrant)
   - [`embeddings`](#embeddings)
   - [Model Endpoint Variables](#model-endpoint-variables)
-- [Parsing Pipeline](#parsing-pipeline)
-  - [Parsing Module Relationship Graph](#parsing-module-relationship-graph)
-  - [Semantic schema](#semantic-schema)
-  - [Child chunk types](#child-chunk-types)
-  - [Table and image handling](#table-and-image-handling)
-  - [Extending extracted fields](#extending-extracted-fields)
-  - [Idempotency and Incremental Ingestion Flow](#idempotency-and-incremental-ingestion-flow)
+- [Parsing and Indexing Pipeline](#parsing-and-indexing-pipeline)
+  - [Module Relationship Graph](#module-relationship-graph)
+  - [Semantic Schema](#semantic-schema)
+  - [Child Chunk Types](#child-chunk-types)
+  - [Table and Image Handling](#table-and-image-handling)
+  - [Extension Points for Future Providers](#extension-points-for-future-providers)
+- [Data Contract and Output Artifacts](#data-contract-and-output-artifacts)
   - [Output Contract Relationship (High Level)](#output-contract-relationship-high-level)
-  - [Metadata shape](#metadata-shape)
-- [Tested Hierarchy](#tested-hierarchy)
-- [Output Artifacts](#output-artifacts)
+  - [Metadata Shape](#metadata-shape)
   - [Parsed JSONL](#parsed-jsonl)
-  - [Tracking manifest](#tracking-manifest)
-  - [Ingestion state](#ingestion-state)
-  - [Indexing state](#indexing-state)
+  - [Tracking Manifest](#tracking-manifest)
+  - [Ingestion State](#ingestion-state)
+  - [Indexing State](#indexing-state)
 - [CLI Reference](#cli-reference)
-  - [Random Parser PDF Audit Batch](#random-parser-pdf-audit-batch)
-- [Development](#development)
-  - [Quality gates](#quality-gates)
-  - [Recommended Wiki-Style Reading Order](#recommended-wiki-style-reading-order)
-  - [Current test coverage areas](#current-test-coverage-areas)
+  - [`parse_corpus.py`](#parse_corpuspy)
+  - [`index_corpus.py`](#index_corpuspy)
+  - [`annotate_random_parsed_pdfs.py`](#annotate_random_parsed_pdfspy)
+- [Development Workflow](#development-workflow)
+  - [Quality Gates](#quality-gates)
+  - [Git Pre-Commit Hook](#git-pre-commit-hook)
+  - [Wiki Reading Order](#wiki-reading-order)
+- [Testing Strategy](#testing-strategy)
+  - [Tested Hierarchy](#tested-hierarchy)
+  - [Coverage Areas](#coverage-areas)
 - [Operations Runbook](#operations-runbook)
-  - [Standard parse run](#standard-parse-run)
-  - [Reprocess all files](#reprocess-all-files)
-  - [Validate incremental behavior](#validate-incremental-behavior)
-  - [Validate incremental indexing behavior](#validate-incremental-indexing-behavior)
+  - [Standard Parse Run](#standard-parse-run)
+  - [Reprocess All Files](#reprocess-all-files)
+  - [Validate Incremental Parse Behavior](#validate-incremental-parse-behavior)
+  - [Validate Incremental Indexing Behavior](#validate-incremental-indexing-behavior)
 - [Troubleshooting](#troubleshooting)
   - [`ModuleNotFoundError: No module named 'src'`](#modulenotfounderror-no-module-named-src)
-  - [Missing parser dependencies](#missing-parser-dependencies)
-  - [No output generated](#no-output-generated)
-  - [Many parse failures](#many-parse-failures)
+  - [Missing Parser Dependencies](#missing-parser-dependencies)
+  - [No Output Generated](#no-output-generated)
+  - [Many Parse Failures](#many-parse-failures)
 - [Roadmap](#roadmap)
 - [Contributing](#contributing)
 - [License](#license)
 
 ## Project Status
+This section documents what is in production use versus what is intentionally left for future phases.
+
 ### Implemented
 - Config-driven parsing workflow.
 - Docling-backed parsing for `.pdf`, `.md`, `.txt`.
 - Semantic element extraction (`title`, `section_heading`, `paragraph`, `table`, `figure_caption`, `equation`, `references`).
 - Parent/child retrieval node generation.
-- JSONL export and readable tracking manifest export.
+- JSONL export and manifest export.
 - Idempotent state tracking to skip unchanged files.
-- LlamaIndex indexing stage for child chunks -> embeddings -> Qdrant.
-- Incremental indexing state (`index_state_file`) for skip-unchanged upserts.
-- Stale vector deletion for removed/changed chunks.
-- Live availability tests for embeddings, LLM endpoint, and Qdrant health.
+- LlamaIndex indexing stage for child chunks to embeddings to Qdrant.
+- Incremental indexing state (`index_state_file`) with skip-unchanged behavior.
+- Stale-vector deletion for removed or changed chunks.
+- Live endpoint availability tests for embeddings, LLM endpoint, and Qdrant health.
 
 ### In Progress / Planned
-- Retrieval/query service integration.
+- Retrieval and query service integration.
 - OpenWebUI query endpoint wiring.
+- Retrieval quality and reranking validation workflows.
 
-## Architecture
-### Current (implemented)
+## System Architecture
+The architecture is split into an implemented ingestion/indexing path and a planned retrieval/query path.
+
+### Current Flow (Implemented)
 1. Discover files from configured source directory.
-2. Parse with Docling and map to semantic schema.
+2. Parse with Docling and map content to semantic schema.
 3. Build parent nodes from section boundaries.
 4. Build child nodes for retrieval granularity.
-5. Export JSONL + manifest.
+5. Export JSONL and tracking manifest.
 6. Index child chunks with LlamaIndex into Qdrant.
-7. Update ingestion + indexing state.
+7. Persist ingestion and indexing state.
 
-### Target (planned)
-1. Serve retrieval/query endpoint for OpenWebUI.
-2. Add retrieval quality evaluation and reranking validation.
+### Target Flow (Planned)
+1. Serve a retrieval/query endpoint for OpenWebUI.
+2. Add retrieval-quality evaluation and reranking validation.
 3. Add end-to-end ingest-to-retrieval integration tests.
 
-### System Relationship Map
+### End-to-End Relationship Map
 ```text
                                   (Planned Query Path)
                                +--------------------------+
@@ -128,7 +141,38 @@ Current implementation focus: **document parsing, semantic structuring, incremen
                            +----------------------------------+
 ```
 
+### Ingestion and Indexing Lifecycle
+```text
+discover_files()
+    |
+    v
+for each file ----------------------------------------------+
+    |                                                       |
+    v                                                       |
+fingerprint(file)                                           |
+    |                                                       |
+    v                                                       |
+should_ingest(relative_path, fingerprint)?                  |
+    | yes                                                   | no
+    v                                                       v
+parse + build nodes + metadata                        skipped_unchanged++
+    |
+    v
+record_ingested(relative_path, fingerprint, doc_id, char_count)
+    |
+    v
+build index points (deterministic point_id + content_hash)
+    |
+    v
+upsert changed points + delete stale points
+    |
+    v
+save ingestion_state + indexing_state
+```
+
 ## Repository Layout
+The codebase is organized around ingestion-first concerns, with tests separated by behavior.
+
 ```text
 config/                      Runtime templates and local config
 scripts/                     CLI scripts
@@ -137,18 +181,32 @@ scripts/                     CLI scripts
 src/ingestion/parsing/       Parsing pipeline and schema
   parser.py                  Parse orchestration + semantic/chunk/metadata assembly
   docling_adapter.py         Docling conversion + low-level Docling item extraction
-  semantic_extractor.py      Semantic element extraction + section-aware classification
+  semantic_extractor.py      Semantic extraction + section-aware classification
 src/ingestion/indexing/
   indexer.py                 LlamaIndex node build + Qdrant upsert flow
 src/ingestion/runtime_config.py
 src/logging_utils.py         Shared logging setup
 data/                        Local artifacts (ignored by default)
-tests/                       Unit tests
+tests/                       Unit and integration tests
 requirements/                Base and dev dependency sets
 ```
 
+## Runtime and Dependency Model
+This project is intentionally Python 3.11-based and dependency-driven through `requirements/` files.
+
+### Python Version
+- Required: Python `3.11`.
+- Declared in `pyproject.toml` (`requires-python = ">=3.11"`).
+
+### Requirements Structure
+- `requirements/base.txt`: runtime + core quality dependencies used in this repository.
+- `requirements/dev.txt`: extends base for additional development helpers.
+- `requirements.txt`: convenience entrypoint forwarding to `requirements/base.txt`.
+
 ## Quick Start
-### 1. Create environment
+Quick start covers local setup, parse execution, and indexing execution.
+
+### 1. Create Environment
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -157,39 +215,39 @@ pip install -r requirements/dev.txt
 pip install -e .
 ```
 
-### 2. Create local runtime config
+### 2. Create Local Runtime Config
 ```bash
 cp config/config.example.yaml config/config.yaml
 ```
 
-Update `config/config.yaml` paths and secrets for your environment.
+Update `config/config.yaml` paths and endpoint/secrets for your environment.
 
-### 3. Run parser
+### 3. Run Parser
 ```bash
 python3 scripts/parse_corpus.py --config config/config.yaml
 ```
 
-### 4. Run sample-limited parse
+### 4. Run Sample-Limited Parse
 ```bash
 python3 scripts/parse_corpus.py --config config/config.yaml --max-files 50
 ```
 
-### 5. Index parsed chunks into Qdrant with LlamaIndex
+### 5. Index Parsed Chunks into Qdrant
 ```bash
 python3 scripts/index_corpus.py --config config/config.yaml
 ```
 
 Docling model cache behavior:
-- Models can download on first use (on-the-fly) and are cached under `DOCLING_ARTIFACTS_PATH`.
-- In this repo, the parser defaults `DOCLING_ARTIFACTS_PATH` to `./docling` when not already set.
+- Models can download on first use and are cached under `DOCLING_ARTIFACTS_PATH`.
+- This repository defaults `DOCLING_ARTIFACTS_PATH` to `./docling` when not already set.
 
 ## Configuration Reference
-Main keys in `config/config.yaml`:
+Main keys in `config/config.yaml` are listed below.
 
 ### `paths`
 - `source_dir`: root directory to scan.
 - `output_jsonl`: parsed records output.
-- `output_manifest`: human-readable summary output.
+- `output_manifest`: human-readable run summary output.
 - `state_file`: idempotency state store.
 - `index_state_file`: incremental indexing state store.
 - `log_dir`: weekly rotating log directory.
@@ -210,15 +268,15 @@ Main keys in `config/config.yaml`:
 - `api_key`: optional API key.
 - `collection`: target collection for vector upserts.
 - `vector_size`: vector dimension used for collection creation.
-- `distance`: vector distance metric (`Cosine`, `Dot`, `Euclid`, `Manhattan`).
+- `distance`: vector metric (`Cosine`, `Dot`, `Euclid`, `Manhattan`).
 
 ### `embeddings`
 - `provider`: embedding backend (`ollama` or `tei`).
 - `model`: embedding model identifier.
-- `endpoint`: provider endpoint URL built from `ip` + `port`.
+- `endpoint`: provider endpoint URL built from `ip` and `port`.
 
 ### Model Endpoint Variables
-Use only config values for model names and addresses:
+Use configuration values for model names and addresses.
 
 ```yaml
 llm:
@@ -229,10 +287,12 @@ embeddings:
   endpoint: "http://<EMBEDDING_IP>:<EMBEDDING_PORT>"
 ```
 
-Other sections (`llm`, `reranker`, `retrieval`, `openwebui`) are configuration placeholders for retrieval/query stages.
+Sections such as `llm`, `reranker`, `retrieval`, and `openwebui` currently act as placeholders for upcoming retrieval/query stages.
 
-## Parsing Pipeline
-### Parsing Module Relationship Graph
+## Parsing and Indexing Pipeline
+This section documents how scripts, adapters, parsers, and state stores interact.
+
+### Module Relationship Graph
 ```text
 scripts/parse_corpus.py
         |
@@ -257,62 +317,34 @@ SemanticExtractor (section path + type + merge)
 Semantic Elements -> Parent Nodes -> Child Nodes -> JSONL + Manifest
 ```
 
-### Semantic schema
+### Semantic Schema
 Each parsed document includes:
 - `elements`: ordered semantic units.
 - `parent_nodes`: section-aligned blocks.
 - `child_nodes`: retrieval-level chunks.
 
-### Child chunk types
+### Child Chunk Types
 - `text`: overlapping windows from parent text.
 - `table`: table-focused chunks with row metadata.
-- `figure`: caption + nearby context.
+- `figure`: caption plus nearby context.
 
-### Table and image handling
+### Table and Image Handling
 - Tables are mapped to semantic elements of type `table`.
 - Table rows are extracted into element metadata (`rows`) and propagated into table child chunks (`table_rows`).
-- Images are treated as figure-caption content (semantic type `figure_caption`), not as raw pixel embeddings.
+- Images are handled as figure-caption content (`figure_caption`), not raw pixel embeddings.
 - Figure child chunks include caption text plus nearby paragraph context (`figure_context`) when available.
 
-### Extending extracted fields
-- Update semantic extraction rules in `src/ingestion/parsing/semantic_extractor.py`:
-  - `extract(...)` to add new element types/metadata.
-  - `_classify_text_block(...)` and `_looks_like_*` helpers for heuristic routing.
-- Update Docling-specific conversion/item handling in `src/ingestion/parsing/docling_adapter.py`:
-  - `convert(...)` for source-format conversion behavior.
-  - `extract_item_text(...)`, `item_page(...)`, and `table_rows(...)` for low-level Docling mapping.
-- Add document-level fields in `_build_metadata(...)`.
-- Add chunk-level fields in `_build_parent_nodes(...)` and `_build_child_nodes(...)`.
-- JSONL export already serializes full document/element/parent/child payloads; update `export_tracking_manifest(...)` if you also want new fields in the manifest.
+### Extension Points for Future Providers
+These extension points allow provider growth without changing current business behavior.
 
-### Idempotency and Incremental Ingestion Flow
-```text
-discover_files()
-    |
-    v
-for each file ----------------------------------------------+
-    |                                                       |
-    v                                                       |
-fingerprint(file)                                           |
-    |                                                       |
-    v                                                       |
-should_ingest(relative_path, fingerprint)?                  |
-    | yes                                                   | no
-    v                                                       v
-parse + build nodes + metadata                        skipped_unchanged++
-    |
-    v
-record_ingested(relative_path, fingerprint, doc_id, char_count)
-    |
-    v
-end loop
-    |
-    v
-remove_missing(seen_relative_paths) [only when max_files is not set]
-    |
-    v
-save state
-```
+- Semantic extraction rules live in `src/ingestion/parsing/semantic_extractor.py`.
+- Docling conversion and item mapping live in `src/ingestion/parsing/docling_adapter.py`.
+- Document-level metadata assembly lives in parser metadata builders.
+- Parent/child chunk field composition lives in parser node builders.
+- Manifest export can be extended when new fields must be visible outside JSONL.
+
+## Data Contract and Output Artifacts
+The ingestion contract and artifact outputs are stable references for downstream systems.
 
 ### Output Contract Relationship (High Level)
 ```text
@@ -334,55 +366,37 @@ ParsedDocument
         +-- chunk_type: text | table | figure
 ```
 
-### Metadata shape
+### Metadata Shape
 Document metadata includes:
 - source and relative paths.
 - topic, title, inferred paper metadata.
-- page and char-count stats.
-- element/parent/child counts.
+- page and char-count statistics.
+- element, parent, and child counts.
 
-## Tested Hierarchy
-The ingestion hierarchy validated by tests is:
-
-1. `ParsedDocument` (document root)
-2. `elements` (ordered semantic sequence)
-3. `parent_nodes` (section-aligned hierarchy level)
-4. `child_nodes` (retrieval chunks linked to parent nodes)
-
-Incremental indexing hierarchy validated by tests is:
-
-1. `doc_id`
-2. deterministic `point_id` (UUID)
-3. `content_hash` snapshot in `index_state_file`
-4. stale-point deletion when a previously indexed point no longer exists in current doc snapshot
-
-Related tests:
-- `tests/test_parsing.py`
-- `tests/test_indexing_state.py`
-- `tests/test_model_availability.py`
-
-## Output Artifacts
 ### Parsed JSONL
-- Path: `paths.output_jsonl`
+- Path: `paths.output_jsonl`.
 - One parsed document per line.
 - Contains full text, semantic elements, parent nodes, and child nodes.
 
-### Tracking manifest
-- Path: `paths.output_manifest`
+### Tracking Manifest
+- Path: `paths.output_manifest`.
 - Aggregated run metadata and per-document summaries.
 - Useful for manual QA and pipeline observability.
 
-### Ingestion state
-- Path: `paths.state_file`
+### Ingestion State
+- Path: `paths.state_file`.
 - Stores per-file fingerprints and last ingestion metadata.
 - Enables deterministic skip-unchanged behavior.
 
-### Indexing state
-- Path: `paths.index_state_file`
-- Stores per-doc point_id -> content_hash snapshots.
+### Indexing State
+- Path: `paths.index_state_file`.
+- Stores per-document `point_id -> content_hash` snapshots.
 - Enables incremental indexing skip and stale-point deletion.
 
 ## CLI Reference
+All scripts are intended to run from repository root.
+
+### `parse_corpus.py`
 `python3 scripts/parse_corpus.py [options]`
 
 Options:
@@ -398,6 +412,7 @@ Options:
 - `--log-dir`
 - `--log-level`
 
+### `index_corpus.py`
 `python3 scripts/index_corpus.py [options]`
 
 Options:
@@ -415,9 +430,10 @@ Options:
 - `--log-dir`
 - `--log-level`
 
-### Random Parser PDF Audit Batch
-Use this to recreate `N` random original PDFs with parser labels.
-Generated files use sequential numeric names in selection order: `1.pdf`, `2.pdf`, ..., `N.pdf`.
+### `annotate_random_parsed_pdfs.py`
+Use this script to recreate `N` random original PDFs with parser labels.
+
+Generated files use sequential numeric names in selection order (`1.pdf`, `2.pdf`, ..., `N.pdf`).
 
 `python3 scripts/annotate_random_parsed_pdfs.py [options]`
 
@@ -438,78 +454,128 @@ python3 scripts/annotate_random_parsed_pdfs.py \
   --overwrite
 ```
 
-## Development
-### Quality gates
+## Development Workflow
+Development quality gates and local hooks are part of normal repository use.
+
+### Quality Gates
 ```bash
+.venv/bin/python -m ruff check .
+.venv/bin/python -m mypy src scripts tests
 .venv/bin/pytest -q
 ```
 
-### Recommended Wiki-Style Reading Order
-1. Read `Architecture` to understand current vs target scope.
-2. Read `Parsing Pipeline` and its relationship graphs.
-3. Read `Configuration Reference` to understand runtime controls.
-4. Read `Output Artifacts` before integrating downstream systems.
-5. Use `Operations Runbook` + `Troubleshooting` for day-2 operations.
+Run live endpoint integration checks explicitly:
+```bash
+.venv/bin/pytest -q -m integration
+```
 
-### Current test coverage areas
-- parsing behavior and semantic extraction.
-- skip-unchanged state flow.
-- incremental indexing state behavior.
-- config resolution and override precedence.
-- logging configuration.
-- live endpoint availability checks for embeddings, llm, and qdrant.
+### Git Pre-Commit Hook
+Repository hook (`.git/hooks/pre-commit`) runs Ruff, MyPy, and tests before commit:
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "Running ruff before commit..."
+.venv/bin/python -m ruff check .
+
+echo "Running mypy before commit..."
+.venv/bin/python -m mypy src scripts tests
+
+echo "Running tests before commit..."
+.venv/bin/pytest -q
+```
+
+### Wiki Reading Order
+1. Read `System Architecture` to understand implemented and planned scope.
+2. Read `Parsing and Indexing Pipeline` for data-flow details.
+3. Read `Configuration Reference` for runtime controls.
+4. Read `Data Contract and Output Artifacts` before downstream integration.
+5. Use `Operations Runbook` and `Troubleshooting` for day-2 operations.
+
+## Testing Strategy
+Testing focuses on contract stability, incremental behavior, and operational safety.
+
+### Tested Hierarchy
+Ingestion hierarchy validated by tests:
+1. `ParsedDocument` (document root).
+2. `elements` (ordered semantic sequence).
+3. `parent_nodes` (section-aligned hierarchy level).
+4. `child_nodes` (retrieval chunks linked to parent nodes).
+
+Incremental indexing hierarchy validated by tests:
+1. `doc_id`.
+2. Deterministic `point_id` (UUID).
+3. `content_hash` snapshot in `index_state_file`.
+4. Stale-point deletion when previously indexed points no longer exist.
+
+### Coverage Areas
+- Parsing behavior and semantic extraction.
+- Skip-unchanged ingestion state flow.
+- Incremental indexing state behavior.
+- Runtime config resolution and override precedence.
+- Logging configuration.
+- Live endpoint availability checks for embeddings, LLM, and Qdrant (`integration` marker).
 
 ## Operations Runbook
-### Standard parse run
+Operational runbooks help validate deterministic behavior in local or CI-like runs.
+
+### Standard Parse Run
 1. Validate config paths exist and are writable.
 2. Run parser.
 3. Check summary line in console output.
 4. Inspect manifest for document counts and previews.
 
-### Reprocess all files
-Run with `--no-skip-unchanged`.
+### Reprocess All Files
+Run parser with `--no-skip-unchanged`.
 
-### Validate incremental behavior
+### Validate Incremental Parse Behavior
 1. Run parser once.
 2. Run parser again with unchanged corpus.
 3. Confirm `skipped_unchanged` increases.
 
-### Validate incremental indexing behavior
+### Validate Incremental Indexing Behavior
 1. Run `scripts/index_corpus.py` once.
 2. Run it again against unchanged JSONL.
-3. Confirm `Skipped nodes` increases and `Indexed` remains low/zero.
+3. Confirm `Skipped nodes` increases and `Indexed` remains low or zero.
 
 ## Troubleshooting
+This section covers common setup and runtime failure modes.
+
 ### `ModuleNotFoundError: No module named 'src'`
-Use repository root as working directory and run via:
+Use repository root as working directory and run:
+
 ```bash
 python3 scripts/parse_corpus.py --config config/config.yaml
 ```
+
 Optionally install editable package with `pip install -e .`.
 
-### Missing parser dependencies
+### Missing Parser Dependencies
 Install requirements:
+
 ```bash
 pip install -r requirements.txt
 ```
 
-### No output generated
+### No Output Generated
 Check:
 - `paths.source_dir` points to real files.
-- file extensions are supported (`.pdf`, `.md`, `.txt`).
-- `min_characters` is not too high.
+- File extensions are supported (`.pdf`, `.md`, `.txt`).
+- `min_characters` is not set too high.
 
-### Many parse failures
+### Many Parse Failures
 Review logs in `paths.log_dir` and inspect `UNPARSED_FILE` lines.
 
 ## Roadmap
 - Add retrieval/query service for OpenWebUI.
 - Add end-to-end ingest-to-retrieval integration tests.
-- Add retrieval quality and reranking evaluation benchmarks.
+- Add retrieval-quality and reranking evaluation benchmarks.
 
 ## Contributing
 - Keep changes CPU-compatible.
 - Add or update tests with behavior changes.
+- Keep Ruff and MyPy checks green.
 - Update this README when functionality changes.
 
 ## License
