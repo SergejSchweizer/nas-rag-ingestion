@@ -1,245 +1,452 @@
-# AGENT.md
+# AGENTS.md
 
 ## Purpose
 
-This document defines the operational rules for AI coding agents contributing to this repository.
+This repository is designed for production-quality AI/ML/quant research systems.
 
-The agent must behave like a senior software engineer working in a production environment.
+All coding agents must optimize for:
 
-Goals:
-
-- Maintain clean architecture
-- Preserve system stability
-- Prevent regressions
-- Ensure full documentation
-- Maintain test coverage
-- Avoid security risks
-- Keep repository understandable for future developers
-
----
-
-# 1. Core Principles
-
-## 1.1 Never break working functionality
-
-Before modifying existing logic:
-
-- understand full execution flow
-- inspect dependencies
-- identify downstream consumers
-- preserve backward compatibility unless explicitly instructed otherwise
-
-If unsure:
-
-- ask for clarification
-- do not make destructive assumptions
-
-## 1.2 Always prefer maintainability over shortcuts
-
-Avoid:
-
-- quick hacks
-- hidden side effects
-- duplicated logic
-- oversized files
-- tightly coupled components
-
-Prefer:
-
-- abstraction
-- composition
-- interfaces
-- reusable components
+- maintainability
+- modularity
+- reproducibility
 - testability
+- documentation quality
+- scientific rigor
+- future extensibility
 
-## 1.3 Production-ready code only
-
-Every code contribution must be:
-
-- typed
-- documented
-- testable
-- modular
-- observable
-- deterministic where possible
+The repository should always be maintainable by another engineer without requiring tribal knowledge.
 
 ---
 
-# 2. Security Rules
+# Core Engineering Rules
 
-## Never expose secrets
+## Architecture
 
-The agent must NEVER:
+All projects must follow modular separation.
 
-- print API keys
-- print tokens
-- print credentials
-- hardcode secrets
-- expose `.env` contents
-- log sensitive credentials
-
-Use:
-
-- environment variables
-- secret managers
-- configuration abstraction
-
----
-
-# 3. Required Project Structure
-
-```bash
+```text
 project/
 ├── ingestion/
-├── retrieval/
+├── preprocessing/
+├── modeling/
+├── evaluation/
 ├── api/
-├── orchestration/
-├── core/
-├── state/
+├── infra/
+├── notebooks/
 ├── tests/
-├── scripts/
 ├── docs/
-└── README.md
+├── README.md
+├── REPORT.md
+└── AGENTS.md
 ```
+
+Rules:
+
+- Keep modules isolated
+- Use explicit interfaces
+- Avoid large monolithic scripts
+- Separate experimental notebooks from production code
+- Move reusable notebook logic into Python modules
 
 ---
 
-# 4. Testing Requirements
+# Code Quality Rules
 
-After EVERY change run:
+## Mandatory Type Safety
+
+- Use type hints everywhere
+- Functions must have explicit return types
+
+## Documentation
+
+- All functions require docstrings
+- Public classes require usage examples
+
+## Formatting
+
+Code must remain compatible with:
+
+- ruff
+- mypy
+- pytest
+
+---
+
+# Testing Rules
+
+After every meaningful code change:
 
 ```bash
 pytest
 ```
 
-Required:
-
-- unit tests
-- integration tests
-- e2e tests
-- regression tests for bug fixes
-
----
-
-# 5. Code Quality
+For linting:
 
 ```bash
 ruff check .
-ruff format .
 mypy .
 ```
 
-Mandatory for all commits.
+Pre-commit hooks must automatically run:
+
+- tests
+- lint checks
+- formatting checks
 
 ---
 
-# 6. Documentation
+# Security Rules
 
-README.md must function as a full wiki:
+- Never expose secrets
+- Never commit credentials
+- Never expose API keys
+- Use environment variables
+- Use `.env.example`
 
-- architecture
-- setup
-- workflows
-- deployment
-- troubleshooting
-- scaling
+---
 
-Use nested sections and ASCII diagrams.
+# README.md Requirements
+
+README.md must function as a complete technical wiki.
+
+It must always include:
+
+- project overview
+- architecture diagram
+- installation guide
+- dependency setup
+- module explanations
+- execution workflow
+- testing instructions
+- deployment instructions
+- known limitations
+- future improvements
+
+Use nested sections.
+
+Use ASCII diagrams where helpful.
 
 Example:
 
 ```text
-User → API → Retrieval → Reranker → LLM
+PDF -> Parser -> Chunker -> Embeddings -> Vector DB -> Retrieval -> LLM
 ```
 
----
-
-# 7. Design Patterns
-
-Use where appropriate:
-
-- Strategy
-- Factory
-- Adapter
-- Repository
-- Dependency Injection
+README must always remain updated after major architectural changes.
 
 ---
 
-# 8. State Management
+# REPORT.md Requirements (MANDATORY FOR RESEARCH PROJECTS)
 
-State must be explicit.
+Every research-heavy repository must maintain an additional `REPORT.md`.
+
+This file represents the scientific paper / empirical research report.
+
+Agents must automatically update REPORT.md whenever:
+
+- experiments change
+- model architecture changes
+- evaluation metrics change
+- datasets change
+- new findings emerge
+
+---
+
+# REPORT.md Required Structure
+
+## 1. Title
+
+Must be precise and academic.
+
+Bad:
+
+"Cool AI Trading Model"
+
+Good:
+
+"Hidden Markov Regime Detection in Bitcoin Markets Using Deribit Microstructure Features"
+
+---
+
+## 2. Abstract (150–300 words)
+
+Must contain:
+
+- problem statement
+- methodology
+- dataset
+- findings
+- contribution
+
+Must be exactly one concise section.
+
+---
+
+## 3. Introduction
+
+Must contain:
+
+### Paragraph 1
+Problem motivation
+
+### Paragraph 2
+Current limitations
+
+### Paragraph 3
+Proposed approach
+
+### Paragraph 4
+Research contributions
+
+Example contributions:
+
+- We propose...
+- We evaluate...
+- We demonstrate...
+
+---
+
+## 4. Literature Review
+
+Must cite prior research.
 
 Examples:
 
-- checkpoints
-- workflow state
-- cache
-- session state
+- Engle (1982)
+- Bollerslev (1986)
+- Hamilton (1989)
 
-Never hide state in globals.
+Agents must avoid shallow citation dumping.
 
----
-
-# 9. Pre-commit Hooks
-
-Every repo must include pre-commit hooks for:
-
-- pytest
-- ruff
-- mypy
+They must synthesize literature.
 
 ---
 
-# 10. RAG / Agent Systems
+## 5. Dataset Section
 
-Validate:
+Must contain:
 
-- parsing quality
-- chunking quality
-- retrieval metrics
-- hallucination rate
-- latency
-- fallback behavior
-
-Metrics:
-
-- recall@k
-- precision@k
-- p95 latency
-- token cost
+- source
+- sample period
+- number of observations
+- variable descriptions
+- cleaning methodology
+- train/test split
 
 ---
 
-# 11. Failure Handling
+## 6. Methodology Section
 
-Define:
+Must contain:
 
-- retries
-- timeouts
-- fallbacks
-- recovery strategy
+- mathematical formulas
+- algorithm design
+- optimization logic
+- feature engineering pipeline
 
----
+For ML/quant systems:
 
-# 12. Forbidden Behavior
-
-Never:
-
-- bypass tests
-- ignore linting
-- expose secrets
-- rewrite architecture impulsively
-- leave undocumented complexity
+- objective functions
+- loss functions
+- model assumptions
 
 ---
 
-# 13. Definition of Done
+# Results Section Rules
 
-Work is complete only when:
+This is mandatory.
 
-- tests pass
-- docs updated
-- architecture remains clean
-- feature works
-- maintainability improves
+---
+
+## Descriptive Statistics Table
+
+Must include:
+
+| Variable | Mean | Std | Min | Max |
+
+---
+
+## Model Comparison Table
+
+Examples:
+
+| Model | Accuracy | Sharpe | AUC | RMSE |
+
+---
+
+## Robustness Table
+
+Alternative configurations must be tested.
+
+---
+
+# Mandatory Figures
+
+Research papers must contain:
+
+Minimum:
+
+3 figures
+
+Preferred:
+
+5–10 figures
+
+Examples:
+
+- correlation heatmap
+- feature importance chart
+- confusion matrix
+- regime plot
+- transition matrix
+- posterior probability plot
+- residual diagnostics
+- model comparison chart
+
+---
+
+# Figure Rules
+
+Every figure must contain:
+
+1. Figure number
+2. Figure title
+3. In-text reference
+4. Interpretation paragraph
+
+Bad:
+
+Insert chart without explanation.
+
+Good:
+
+"Figure 4 shows regime persistence across volatility clusters."
+
+---
+
+# Citation Rules
+
+Portfolio paper:
+
+10–30 citations
+
+Academic thesis:
+
+30–100 citations
+
+Conference paper:
+
+15–50 citations
+
+Agents must cite:
+
+- datasets
+- prior methods
+- academic foundations
+- benchmarks
+
+---
+
+# Discussion Section
+
+Must explain:
+
+- business implications
+- limitations
+- model weaknesses
+- assumptions
+
+---
+
+# Conclusion Section
+
+Must summarize:
+
+- contribution
+- findings
+- future work
+
+---
+
+# Appendix Rules
+
+Move excessive plots/tables to appendix.
+
+Appendix may contain:
+
+- additional experiments
+- hyperparameter sensitivity
+- supplementary visualizations
+
+---
+
+# Reproducibility Rules
+
+All experiments must be reproducible.
+
+Agents must preserve:
+
+- random seeds
+- experiment configs
+- dataset versions
+- model configs
+
+Use:
+
+- MLflow
+- config files
+- experiment tracking
+
+---
+
+# Notebook Rules
+
+Notebooks are allowed only for:
+
+- exploration
+- visualization
+- prototyping
+
+Final logic must move into production modules.
+
+---
+
+# Pull Request Rules
+
+Agents must:
+
+- keep PRs small
+- add tests
+- update README
+- update REPORT
+- document architectural changes
+
+---
+
+# Failure Conditions
+
+Agents must NEVER:
+
+- create giant scripts
+- leave undocumented pipelines
+- skip tests
+- leave stale README files
+- leave stale REPORT files
+- publish unverifiable research claims
+
+---
+
+# Final Goal
+
+The repository should always be:
+
+- production-grade for engineers
+- reproducible for researchers
+- understandable for recruiters
+- extensible for future agents
+
+The repository should function simultaneously as:
+
+- software product
+- research artifact
+- portfolio asset
